@@ -33,7 +33,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -426, y: 240}
+  m_AnchoredPosition: {x: -426, y: 259}
   m_SizeDelta: {x: 39.9559, y: 47.1612}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &91561642949358505
@@ -178,11 +178,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 17c989ccaf116b840a684ed87c6fe14f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIManager
-  soulLiquidImage: {fileID: 871482799961336821}
   healthBarContainer: {fileID: 6703765385387247118}
   maskPrefab: {fileID: 7213536281758149737, guid: a6fbd8c824f9f1c41b5aa7bd5e232602, type: 3}
   fullMaskSprite: {fileID: 21300000, guid: 46adf73502271c14ea092b518e33cf01, type: 3}
   emptyMaskSprite: {fileID: 21300000, guid: fd5f17d26b49f0c4a99b03fb0d8df4ed, type: 3}
+  soulLiquidImage: {fileID: 871482799961336821}
 --- !u!1 &8220952977552062103
 GameObject:
   m_ObjectHideFlags: 0
@@ -253,7 +253,7 @@ MonoBehaviour:
   m_PreserveAspect: 0
   m_FillCenter: 1
   m_FillMethod: 1
-  m_FillAmount: 0.943
+  m_FillAmount: 1
   m_FillClockwise: 1
   m_FillOrigin: 0
   m_UseSpriteMesh: 0

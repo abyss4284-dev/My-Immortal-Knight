@@ -12,10 +12,20 @@ public class PlayerController : MonoBehaviour
     [Header("视觉节点")]
     public Transform graphicsNode;
 
-    [Header("地面检测")]
+    [Header("地面与墙体检测")]
     public Transform groundCheck;
+    public Transform wallCheck;           // 挂在玩家前方的墙体检测点
     public LayerMask groundLayer;
+    public float wallCheckRadius = 0.2f;  // 墙体检测半径
     private bool isGrounded;
+    private bool isTouchingWall;          // 是否触碰到墙壁
+
+    [Header("蹬墙跳/滑墙设置")]
+    public float wallSlidingSpeed = 2f;    // 滑墙/停在墙上的最大下滑速度
+    public Vector2 wallJumpForce = new Vector2(10f, 12f); // 蹬墙跳力度 (X: 反推力, Y: 向上力)
+    public float wallJumpDuration = 0.15f; // 蹬墙跳瞬间锁住玩家输入的控制时间
+    private bool isWallSliding;
+    private bool isWallJumping;
 
     [Header("手感补正参数")]
     public float coyoteTime = 0.15f;
@@ -30,7 +40,7 @@ public class PlayerController : MonoBehaviour
     private Rigidbody2D rb;
     private float horizontalInput;
 
-    //跳跃特效
+    // 跳跃特效
     public GameObject doubleJumpVFXPrefab;
 
     [Header("攻击设置")]
@@ -55,15 +65,14 @@ public class PlayerController : MonoBehaviour
     [Header("玩家属性")]
     public int maxHealth = 5;
     public int currentHealth;
-    private bool isDead = false;
-    public int maxMana = 50;
-    public int currentMana;
+    public bool isDead = false;
     public static int savedHealth = -1;
     public static int savedMana = -1;
 
     [Header("受击与无敌设置")]
-    public float invincibleDuration = 1.5f;
-    public float hurtRecoilForce = 8f;
+    [Tooltip("受击后的无敌持续时间")]
+    public float invincibleDuration = 0.8f;
+    public float hurtRecoilForce = 8f;      // 纯水平受击反推力
     public float hurtRecoilDuration = 0.15f;
 
     private bool isInvincible = false;
@@ -71,79 +80,65 @@ public class PlayerController : MonoBehaviour
 
     private SpriteRenderer[] playerSprites;
 
-    [Header("UI 联动 (动态获取，无需拖拽)")]
-    public UIManager uiManager;
-
-    private int currentSoul = 0;
-    private int maxSoul = 100;
+    [Header("方向控制")]
+    public string facingDirectionParam = "right"; // 保存当前的玩家朝向指令（"left" 或 "right"）
 
     void Awake()
     {
-        // 🌟 场景加载时，优先读取并继承旧场景状态
-        if (savedHealth != -1)
-        {
-            currentHealth = savedHealth;
-            currentMana = savedMana;
-            Debug.Log($"🎒 跨场景成功！已读取并继承旧状态。当前血量: {currentHealth}, 法力: {currentMana}");
-        }
-        else
-        {
-            currentHealth = maxHealth;
-            currentMana = maxMana;
-        }
+        rb = GetComponent<Rigidbody2D>();
+
+        if (savedHealth != -1) currentHealth = savedHealth;
+        else currentHealth = maxHealth;
     }
 
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
         anim = GetComponentInChildren<Animator>();
-
-        // 🌟 修复：删除原先的 currentHealth = maxHealth; 避免覆盖跨场景血量数据！
-
         playerSprites = GetComponentsInChildren<SpriteRenderer>();
-
-        // 🌟 优化：如果动态生成时 SpawnManager 没来得及绑定 UI，这里进行全自动兜底寻找
-        if (uiManager == null)
-        {
-            uiManager = Object.FindFirstObjectByType<UIManager>();
-        }
-
-        // 🌟 优化：将 UI 初始化逻辑提取，确保此时的数据是最准确的继承数据
-        SyncAllUIToCurrentStats();
-    }
-
-    // 🌟 新增：提供一个可以让 UIManager 或者是 SpawnManager 外部调用的主动绑定方法[cite: 1]
-    public void SetupUI(UIManager manager)
-    {
-        uiManager = manager;
-        SyncAllUIToCurrentStats();
-    }
-
-    // 🌟 新增：封装一个统一将当前属性刷新到 UI 的方法
-    private void SyncAllUIToCurrentStats()
-    {
-        if (uiManager != null)
-        {
-            uiManager.InitializeHealthUI(maxHealth);
-            uiManager.UpdateHealthUI(currentHealth);
-            uiManager.UpdateSoulUI(currentSoul, maxSoul);
-            // 如果你的 UIManager 有蓝条更新方法，可以在这里补充：
-            // uiManager.UpdateManaUI(currentMana, maxMana);
-        }
     }
 
     void Update()
     {
-        if (isDead) return;
-        if (isHurtRecoiling) return;
-        if (isRecoiling) return;
+        if (isDead || isHurtRecoiling || isRecoiling) return;
 
         horizontalInput = Input.GetAxisRaw("Horizontal");
-        if (horizontalInput > 0) graphicsNode.localRotation = Quaternion.Euler(0, 0, 0);
-        else if (horizontalInput < 0) graphicsNode.localRotation = Quaternion.Euler(0, 180, 0);
 
+        // 读取玩家指令，更新方向参数与视觉朝向，强行同步 WallCheck
+        if (!isWallJumping)
+        {
+            if (horizontalInput > 0) // 按右键
+            {
+                facingDirectionParam = "right";
+                graphicsNode.localRotation = Quaternion.Euler(0, 0, 0);
+
+                if (wallCheck != null)
+                {
+                    Vector3 pos = wallCheck.localPosition;
+                    wallCheck.localPosition = new Vector3(Mathf.Abs(pos.x), pos.y, pos.z);
+                }
+            }
+            else if (horizontalInput < 0) // 按左键
+            {
+                facingDirectionParam = "left";
+                graphicsNode.localRotation = Quaternion.Euler(0, 180, 0);
+
+                if (wallCheck != null)
+                {
+                    Vector3 pos = wallCheck.localPosition;
+                    wallCheck.localPosition = new Vector3(-Mathf.Abs(pos.x), pos.y, pos.z);
+                }
+            }
+        }
+
+        // 物理碰撞检测
         isGrounded = Physics2D.OverlapCircle(groundCheck.position, 0.15f, groundLayer);
+        if (wallCheck != null)
+        {
+            isTouchingWall = Physics2D.OverlapCircle(wallCheck.position, wallCheckRadius, groundLayer);
+        }
 
+        // 地面重置跳跃
         if (isGrounded)
         {
             if (rb.linearVelocity.y <= 0.1f)
@@ -157,7 +152,11 @@ public class PlayerController : MonoBehaviour
             coyoteCounter -= Time.deltaTime;
         }
 
-        if (Input.GetButtonDown("Jump"))
+        // 滑墙与重置跳跃逻辑
+        CheckWallSlide();
+
+        // 跳跃输入预输入（K 键）
+        if (Input.GetKeyDown(KeyCode.K))
         {
             jumpBufferCounter = jumpBufferTime;
         }
@@ -166,9 +165,14 @@ public class PlayerController : MonoBehaviour
             jumpBufferCounter -= Time.deltaTime;
         }
 
+        // 触发跳跃分支：滑墙跳 OR 普通/二段跳
         if (jumpBufferCounter > 0f)
         {
-            if (coyoteCounter > 0f)
+            if (isWallSliding)
+            {
+                ExecuteWallJump();
+            }
+            else if (coyoteCounter > 0f)
             {
                 ExecuteJump(jumpForce);
             }
@@ -179,12 +183,14 @@ public class PlayerController : MonoBehaviour
             }
         }
 
-        if (Input.GetButtonUp("Jump") && rb.linearVelocity.y > 0f)
+        // 松开 K 键小跳
+        if (Input.GetKeyUp(KeyCode.K) && rb.linearVelocity.y > 0f && !isWallJumping)
         {
             rb.linearVelocity = new Vector2(rb.linearVelocity.x, rb.linearVelocity.y * 0.5f);
             coyoteCounter = 0f;
         }
 
+        // 攻击输入 (J 键或 Fire1)
         if (Time.time >= nextAttackTime)
         {
             if (Input.GetButtonDown("Fire1") || Input.GetKeyDown(KeyCode.J))
@@ -194,11 +200,75 @@ public class PlayerController : MonoBehaviour
             }
         }
 
+        // 动画控制
         if (anim != null)
         {
             anim.SetFloat("Speed", Mathf.Abs(horizontalInput));
             anim.SetBool("isGrounded", isGrounded);
         }
+    }
+
+    void FixedUpdate()
+    {
+        if (!isRecoiling && !isHurtRecoiling && !isDead && !isWallJumping)
+        {
+            rb.linearVelocity = new Vector2(horizontalInput * moveSpeed * attackSpeedMultiplier, rb.linearVelocity.y);
+        }
+    }
+
+    private void CheckWallSlide()
+    {
+        if (wallCheck == null) return;
+
+        bool wallIsOnRight = wallCheck.localPosition.x > 0;
+        bool wallIsOnLeft = wallCheck.localPosition.x < 0;
+
+        bool isPushingAgainstWall = (wallIsOnRight && horizontalInput > 0) || (wallIsOnLeft && horizontalInput < 0);
+
+        if (isTouchingWall && !isGrounded && isPushingAgainstWall)
+        {
+            isWallSliding = true;
+            jumbCountRemaining = maxJumps;
+
+            if (rb.linearVelocity.y < -wallSlidingSpeed)
+            {
+                rb.linearVelocity = new Vector2(rb.linearVelocity.x, -wallSlidingSpeed);
+            }
+        }
+        else
+        {
+            isWallSliding = false;
+        }
+    }
+
+    private void ExecuteWallJump()
+    {
+        isWallJumping = true;
+        isWallSliding = false;
+        jumpBufferCounter = 0f;
+
+        float facingDirection = (facingDirectionParam == "left") ? -1f : 1f;
+        float jumpDirection = -facingDirection;
+
+        facingDirectionParam = (jumpDirection > 0) ? "right" : "left";
+
+        rb.linearVelocity = new Vector2(jumpDirection * wallJumpForce.x, wallJumpForce.y);
+        graphicsNode.localRotation = Quaternion.Euler(0, jumpDirection > 0 ? 0 : 180, 0);
+
+        if (wallCheck != null)
+        {
+            Vector3 pos = wallCheck.localPosition;
+            float xOffset = Mathf.Abs(pos.x);
+            wallCheck.localPosition = new Vector3(jumpDirection > 0 ? xOffset : -xOffset, pos.y, pos.z);
+        }
+
+        StartCoroutine(StopWallJumpRoutine());
+    }
+
+    private IEnumerator StopWallJumpRoutine()
+    {
+        yield return new WaitForSeconds(wallJumpDuration);
+        isWallJumping = false;
     }
 
     private void ExecuteJump(float force)
@@ -231,66 +301,41 @@ public class PlayerController : MonoBehaviour
         foreach (Collider2D enemy in hitEnemies)
         {
             Debug.Log($"砍中了怪物: {enemy.name}！造成了 {attackDamage} 点伤害。");
-
-            Enemy_small_dragon enemyAI = enemy.GetComponent<Enemy_small_dragon>();
-            if (enemyAI != null)
-            {
-                enemyAI.TakeDamage(attackDamage);
-            }
+            enemy.SendMessageUpwards("TakeDamage", attackDamage, SendMessageOptions.DontRequireReceiver);
         }
 
         StartCoroutine(AttackSpeedDebuff());
 
-        // 🌟 新增：如果成功砍中了怪物，让技能管理器给自己充能 10 点蓝！
         if (hitEnemies.Length > 0)
         {
             PlayerSkillManager skillManager = GetComponent<PlayerSkillManager>();
-            if (skillManager != null)
-            {
-                skillManager.AddManaOnHit();
-            }
+            if (skillManager != null) skillManager.AddManaOnHit();
             ApplyAttackRecoil();
         }
     }
 
     private void ApplyAttackRecoil()
     {
-        float faceDirection = (graphicsNode.localRotation.eulerAngles.y == 180f) ? -1f : 1f;
+        float faceDirection = (facingDirectionParam == "left") ? -1f : 1f;
         Vector2 recoilDirection = new Vector2(-faceDirection, 0f);
-
         float currentRecoilForce = isGrounded ? groundRecoilForce : airRecoilForce;
 
         rb.linearVelocity = new Vector2(recoilDirection.x * currentRecoilForce, rb.linearVelocity.y);
         StartCoroutine(RecoilRoutine());
     }
 
-    private System.Collections.IEnumerator RecoilRoutine()
+    private IEnumerator RecoilRoutine()
     {
         isRecoiling = true;
         yield return new WaitForSeconds(recoilDuration);
         isRecoiling = false;
     }
 
-    private void OnDrawGizmosSelected()
-    {
-        if (attackPoint == null) return;
-        Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(attackPoint.position, attackRange);
-    }
-
-    private System.Collections.IEnumerator AttackSpeedDebuff()
+    private IEnumerator AttackSpeedDebuff()
     {
         attackSpeedMultiplier = 0.3f;
         yield return new WaitForSeconds(0.15f);
         attackSpeedMultiplier = 1f;
-    }
-
-    void FixedUpdate()
-    {
-        if (!isRecoiling)
-        {
-            rb.linearVelocity = new Vector2(horizontalInput * moveSpeed * attackSpeedMultiplier, rb.linearVelocity.y);
-        }
     }
 
     private void OnDrawGizmos()
@@ -300,26 +345,61 @@ public class PlayerController : MonoBehaviour
             Gizmos.color = isGrounded ? Color.green : Color.red;
             Gizmos.DrawWireSphere(groundCheck.position, 0.15f);
         }
+
+        if (wallCheck != null)
+        {
+            Gizmos.color = isTouchingWall ? Color.blue : Color.yellow;
+            Gizmos.DrawWireSphere(wallCheck.position, wallCheckRadius);
+        }
     }
 
+    /// <summary>
+    /// 🌟 1. 玩家物理接触 Boss/怪物身体时触发扣血并施加背向反推力
+    /// </summary>
     private void OnTriggerEnter2D(Collider2D collision)
     {
         if (collision.gameObject.CompareTag("Enemy"))
         {
             if (isInvincible || isDead) return;
-            TakeDamage(1, collision.transform);
+
+            // 1. 先进行扣血结算
+            TakeDamage(1);
+
+            // 2. 直接在此处计算反推力（方向与玩家当前朝向相反）
+            float knockbackDir = (facingDirectionParam == "right") ? -1f : 1f;
+            rb.linearVelocity = new Vector2(knockbackDir * hurtRecoilForce, rb.linearVelocity.y);
+            StartCoroutine(HurtRecoilLockRoutine());
         }
     }
 
-    public void TakeDamage(int damage, Transform damageSource)
+    /// <summary>
+    /// 🌟 2. 持续停留在 Boss/怪物碰撞盒中时触发
+    /// </summary>
+    private void OnTriggerStay2D(Collider2D collision)
+    {
+        if (collision.gameObject.CompareTag("Enemy"))
+        {
+            if (isInvincible || isDead) return;
+
+            // 1. 先进行扣血结算
+            TakeDamage(1);
+
+            // 2. 直接在此处计算反推力（方向与玩家当前朝向相反）
+            float knockbackDir = (facingDirectionParam == "right") ? -1f : 1f;
+            rb.linearVelocity = new Vector2(knockbackDir * hurtRecoilForce, rb.linearVelocity.y);
+            StartCoroutine(HurtRecoilLockRoutine());
+        }
+    }
+
+    /// <summary>
+    /// 🌟 通用受击方法（仅处理扣血、死亡和无敌，不包含任何反推逻辑）
+    /// </summary>
+    public void TakeDamage(int damage)
     {
         if (isInvincible || isDead) return;
 
         currentHealth -= damage;
         Debug.Log($"💔 玩家受到伤害！失去 {damage} 点血，剩余血量: {currentHealth}");
-
-        // 🌟 即使动态开局，只要绑定成功，这里就能完美刷新 UI 
-        if (uiManager != null) uiManager.UpdateHealthUI(currentHealth);
 
         if (currentHealth <= 0)
         {
@@ -327,19 +407,7 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        if (damageSource != null)
-        {
-            ApplyHurtRecoil(damageSource);
-        }
-
         StartCoroutine(InvincibleRoutine());
-    }
-
-    private void ApplyHurtRecoil(Transform enemyTransform)
-    {
-        float knockbackDirection = (transform.position.x > enemyTransform.position.x) ? 1f : -1f;
-        rb.linearVelocity = new Vector2(knockbackDirection * hurtRecoilForce, hurtRecoilForce * 0.5f);
-        StartCoroutine(HurtRecoilLockRoutine());
     }
 
     private IEnumerator HurtRecoilLockRoutine()
@@ -349,6 +417,9 @@ public class PlayerController : MonoBehaviour
         isHurtRecoiling = false;
     }
 
+    /// <summary>
+    /// 🌟 严格按时间结算的无敌协程：时间一到立刻解除无敌
+    /// </summary>
     private IEnumerator InvincibleRoutine()
     {
         isInvincible = true;
@@ -359,7 +430,6 @@ public class PlayerController : MonoBehaviour
             if (playerSprites != null && playerSprites.Length > 0)
             {
                 float targetAlpha = (playerSprites[0].color.a == 1f) ? 0.2f : 1f;
-
                 foreach (SpriteRenderer sprite in playerSprites)
                 {
                     if (sprite != null)
@@ -370,11 +440,11 @@ public class PlayerController : MonoBehaviour
                     }
                 }
             }
-
             yield return new WaitForSeconds(0.1f);
             elapsed += 0.1f;
         }
 
+        // 还原 Sprite 透明度
         if (playerSprites != null)
         {
             foreach (SpriteRenderer sprite in playerSprites)
@@ -391,16 +461,20 @@ public class PlayerController : MonoBehaviour
         isInvincible = false;
     }
 
-    public void AddSoul(int amount)
-    {
-        currentSoul = Mathf.Clamp(currentSoul + amount, 0, maxSoul);
-        if (uiManager != null) uiManager.UpdateSoulUI(currentSoul, maxSoul);
-    }
-
     private void Die()
     {
         isDead = true;
         rb.linearVelocity = Vector2.zero;
-        Debug.Log("💀 战败，游戏结束！");
+        Debug.Log("💀 战败，准备复活...");
+        StartCoroutine(RespawnSequence());
+    }
+
+    private IEnumerator RespawnSequence()
+    {
+        yield return new WaitForSeconds(1.5f);
+
+        PlayerSpawnManager spawnManager = Object.FindFirstObjectByType<PlayerSpawnManager>();
+        if (spawnManager != null) spawnManager.RespawnPlayer();
+        else Debug.LogError("🚨 场景中找不到 PlayerSpawnManager，无法进行复活！");
     }
 }

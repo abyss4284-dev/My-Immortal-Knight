@@ -77,15 +77,25 @@ public class ScenePortal : MonoBehaviour
             }
             relativeHitRatio = Mathf.Clamp01(relativeHitRatio);
 
+            // 🌟 读取玩家组件，保存跨场景生命值与蓝量
             PlayerController playerScript = other.GetComponent<PlayerController>();
+            PlayerSkillManager skillScript = other.GetComponent<PlayerSkillManager>();
+
             if (playerScript != null)
             {
                 PlayerController.savedHealth = playerScript.currentHealth;
-                PlayerController.savedMana = playerScript.currentMana;
+            }
+
+            if (skillScript != null)
+            {
+                PlayerController.savedMana = skillScript.currentMana;
             }
 
             isTransferring = true;
-            SceneManager.LoadScene(targetSceneName);
+            if (SceneFader.Instance != null)
+            {
+                SceneFader.Instance.FadeToScene(targetSceneName);
+            }
         }
     }
 

@@ -11,6 +11,15 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Path.unity
     guid: 315af7fbf79311549a3d9667b294db33
+  - enabled: 1
+    path: Assets/Scenes/Town.unity
+    guid: c1fafa6e51f0dd94988ccbae2b03cd44
+  - enabled: 1
+    path: Assets/Scenes/Forest.unity
+    guid: 8a81506899581654586b8514c825e823
+  - enabled: 1
+    path: Assets/Scenes/DemonPalace.unity
+    guid: 26012c021200b2244a4d189bba87d3b0
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   m_UseUCBPForAssetBundles: 0

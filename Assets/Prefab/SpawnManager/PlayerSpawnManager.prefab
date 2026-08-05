@@ -45,5 +45,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSpawnManager
   playerPrefab: {fileID: 5055772717421964763, guid: 97b4fba464b44664c8f583cd1abd39f0, type: 3}
-  uiPrefab: {fileID: 0}
+  uiPrefab: {fileID: 3965216600245618994, guid: 213616c57c4429244a51ccf5c0bd23c8, type: 3}
   exitOffset: 1.2
+  firstBootSpawnPoint: {fileID: 0}

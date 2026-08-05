@@ -1,0 +1,210 @@
+fileFormatVersion: 2
+guid: 9b36958bc21bf5546bc9d69602ead272
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -8287762996514018858
+    second: "Boss\u6218\u706F\u53F0_0"
+  - first:
+      213: 6684552009680951990
+    second: "Boss\u6218\u706F\u53F0_1"
+  - first:
+      213: -8404427910150441161
+    second: "Boss\u6218\u706F\u53F0_2"
+  - first:
+      213: -2857143977944450728
+    second: "Boss\u6218\u706F\u53F0_3"
+  - first:
+      213: 8450960213793481116
+    second: "Boss\u6218\u706F\u53F0_4"
+  - first:
+      213: 4630609074401909084
+    second: "Boss\u6218\u706F\u53F0_5"
+  - first:
+      213: 3568707029541215452
+    second: "Boss\u6218\u706F\u53F0_6"
+  - first:
+      213: 6240567430452470286
+    second: "Boss\u6218\u706F\u53F0_7"
+  - first:
+      213: -2357308283644392179
+    second: "Boss\u6218\u706F\u53F0_8"
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 200
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: "Boss\u6218\u706F\u53F0_1"
+      rect:
+        serializedVersion: 2
+        x: 249
+        y: 20
+        width: 221
+        height: 470
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6ba18a3f2ac44cc50800000000000000
+      internalID: 6684552009680951990
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "Boss\u6218\u706F\u53F0_3"
+      rect:
+        serializedVersion: 2
+        x: 37
+        y: 20
+        width: 183
+        height: 332
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 859797a90b26958d0800000000000000
+      internalID: -2857143977944450728
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 65885fff1883db14382dfac17b383d6e
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      "Boss\u6218\u706F\u53F0_0": -8287762996514018858
+      "Boss\u6218\u706F\u53F0_1": 6684552009680951990
+      "Boss\u6218\u706F\u53F0_2": -8404427910150441161
+      "Boss\u6218\u706F\u53F0_3": -2857143977944450728
+      "Boss\u6218\u706F\u53F0_4": 8450960213793481116
+      "Boss\u6218\u706F\u53F0_5": 4630609074401909084
+      "Boss\u6218\u706F\u53F0_6": 3568707029541215452
+      "Boss\u6218\u706F\u53F0_7": 6240567430452470286
+      "Boss\u6218\u706F\u53F0_8": -2357308283644392179
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -5,126 +5,158 @@ using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
-    [Header("=== 能量/蓝条 UI 设置 ===")]
-    public Image soulLiquidImage; // 绑定原先的能量条[cite: 2]
+    [Header("=== 血量 (面具/容器) UI 设置 ===")]
+    public Transform healthBarContainer;
+    public GameObject maskPrefab;
+    public Sprite fullMaskSprite;
+    public Sprite emptyMaskSprite;
 
-    [Header("=== 血量 UI 设置 ===")]
-    public Transform healthBarContainer; //[cite: 2]
-    public GameObject maskPrefab;        //[cite: 2]
+    [Header("=== 蓝条 (魂/法力) UI 设置 ===")]
+    public Image soulLiquidImage;
 
-    private List<Image> spawnedMasks = new List<Image>(); //[cite: 2]
-
-    [Header("=== 测试用美术资源（可选） ===")]
-    public Sprite fullMaskSprite;  //[cite: 2]
-    public Sprite emptyMaskSprite; //[cite: 2]
-
-    // 缓存追踪的玩家与其技能管理组件
+    // 内部引用的组件
     private PlayerController targetPlayer;
-    private PlayerSkillManager targetSkillManager; // 🌟 新增：追踪技能脚本
+    private PlayerSkillManager targetSkillManager;
 
-    public void SetupUI(PlayerController player)
+    private List<Image> spawnedMasks = new List<Image>();
+
+    // 状态记录
+    private int lastRecordedHealth = -999;
+    private int lastRecordedMaxHealth = -999;
+
+    void Start()
     {
-        targetPlayer = player;
-
-        if (targetPlayer != null)
-        {
-            InitializeHealthUI(targetPlayer.maxHealth); //[cite: 2]
-            UpdateHealthUI(targetPlayer.currentHealth); //[cite: 2]
-
-            // 🌟 尝试在玩家身上直接抓取技能组件
-            targetSkillManager = player.GetComponent<PlayerSkillManager>();
-            if (targetSkillManager != null)
-            {
-                UpdateSoulUI(targetSkillManager.currentMana, targetSkillManager.maxMana);
-            }
-        }
-    }
-
-    // 🌟 新增：供 PlayerSkillManager 诞生时反向注册
-    public void SetupSkillManager(PlayerSkillManager skillManager)
-    {
-        targetSkillManager = skillManager;
-        if (targetSkillManager != null)
-        {
-            UpdateSoulUI(targetSkillManager.currentMana, targetSkillManager.maxMana);
-        }
+        // 游戏启动时，强行重绑定一次
+        ForceRebindPlayer();
     }
 
     void Update()
     {
-        if (targetPlayer != null)
+        // 🌟 1. 防御：如果丢失了引用，或者绑定的 Player 被销毁了，重新搜寻
+        if (targetPlayer == null || targetSkillManager == null)
         {
-            UpdateHealthUI(targetPlayer.currentHealth); //[cite: 2]
+            ForceRebindPlayer();
+            if (targetPlayer == null) return; // 真的没找到玩家，直接退出本次 Update
         }
 
-        // 🌟 修改：监控 SkillManager 的蓝量数值，代替原本的 PlayerController 蓝量监控[cite: 2]
-        if (targetSkillManager != null)
+        // 🌟 2. 监控最大血量（发生变化时重新生成面具）
+        if (targetPlayer.maxHealth != lastRecordedMaxHealth)
         {
-            float targetFill = (float)targetSkillManager.currentMana / targetSkillManager.maxMana;
-            if (Mathf.Abs(soulLiquidImage.fillAmount - targetFill) > 0.001f) //[cite: 2]
+            lastRecordedMaxHealth = targetPlayer.maxHealth;
+            RebuildHealthContainers(targetPlayer.maxHealth);
+            UpdateMaskSprites(targetPlayer.currentHealth);
+            lastRecordedHealth = targetPlayer.currentHealth;
+        }
+
+        // 🌟 3. 监控当前血量变化
+        if (targetPlayer.currentHealth != lastRecordedHealth)
+        {
+            lastRecordedHealth = targetPlayer.currentHealth;
+            UpdateMaskSprites(targetPlayer.currentHealth);
+        }
+
+        // 🌟 4. 监控蓝量变化 (直接赋值，排除 MoveTowards 速度极慢导致的卡住现象)
+        if (targetSkillManager != null && soulLiquidImage != null)
+        {
+            if (targetSkillManager.maxMana > 0)
             {
-                soulLiquidImage.fillAmount = Mathf.MoveTowards(soulLiquidImage.fillAmount, targetFill, 5f * Time.deltaTime); //[cite: 2]
+                float fillRatio = (float)targetSkillManager.currentMana / targetSkillManager.maxMana;
+                soulLiquidImage.fillAmount = fillRatio;
             }
         }
     }
 
-    public void InitializeHealthUI(int maxHealth)
+    /// <summary>
+    /// 🌟 强制重新绑定当前场景中【激活状态】的 Player
+    /// </summary>
+    public void ForceRebindPlayer()
     {
-        foreach (Transform child in healthBarContainer) { Destroy(child.gameObject); } //[cite: 2]
-        spawnedMasks.Clear(); //[cite: 2]
+        // 1. 查找所有带 Player 标签的物体
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
 
-        for (int i = 0; i < maxHealth; i++) //[cite: 2]
+        foreach (GameObject p in players)
         {
-            GameObject newMask = Instantiate(maskPrefab, healthBarContainer, false); //[cite: 2]
-
-            RectTransform rect = newMask.GetComponent<RectTransform>(); //[cite: 2]
-            if (rect != null) //[cite: 2]
+            // 确保只绑定当前处于激活状态的 Player
+            if (p.activeInHierarchy)
             {
-                rect.localPosition = Vector3.zero; //[cite: 2]
-                rect.localRotation = Quaternion.identity; //[cite: 2]
-                rect.localScale = Vector3.one; //[cite: 2]
-            }
+                targetPlayer = p.GetComponent<PlayerController>();
+                targetSkillManager = p.GetComponent<PlayerSkillManager>();
 
-            Image maskImage = newMask.GetComponent<Image>(); //[cite: 2]
-            maskImage.sprite = fullMaskSprite; //[cite: 2]
-            spawnedMasks.Add(maskImage); //[cite: 2]
+                // 强制重置记录值，保证在下一帧 Update 时触发 UI 重新渲染
+                lastRecordedHealth = -999;
+                lastRecordedMaxHealth = -999;
+
+                Debug.Log($"✅ [UIManager] 成功绑定活跃玩家: {p.name} (Instance ID: {p.GetInstanceID()})");
+                break;
+            }
+        }
+
+        if (targetPlayer == null)
+        {
+            Debug.LogWarning("⚠️ [UIManager] 场景中未找到激活的 Player 物体！");
         }
     }
 
-    public void UpdateHealthUI(int currentHealth)
+    /// <summary>
+    /// 重新生成面具图标
+    /// </summary>
+    private void RebuildHealthContainers(int maxHealth)
     {
-        for (int i = 0; i < spawnedMasks.Count; i++) //[cite: 2]
+        if (healthBarContainer == null || maskPrefab == null) return;
+
+        // 清空旧面具
+        foreach (Transform child in healthBarContainer)
         {
-            if (i < currentHealth) //[cite: 2]
+            Destroy(child.gameObject);
+        }
+        spawnedMasks.Clear();
+
+        // 实例化新面具
+        for (int i = 0; i < maxHealth; i++)
+        {
+            GameObject newMask = Instantiate(maskPrefab, healthBarContainer, false);
+
+            RectTransform rect = newMask.GetComponent<RectTransform>();
+            if (rect != null)
             {
-                spawnedMasks[i].sprite = fullMaskSprite; //[cite: 2]
-                spawnedMasks[i].enabled = true; //[cite: 2]
+                rect.localScale = Vector3.one;
+                rect.localRotation = Quaternion.identity;
+            }
+
+            Image maskImage = newMask.GetComponent<Image>();
+            if (maskImage != null)
+            {
+                spawnedMasks.Add(maskImage);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 更新面具的图片显示
+    /// </summary>
+    private void UpdateMaskSprites(int currentHealth)
+    {
+        for (int i = 0; i < spawnedMasks.Count; i++)
+        {
+            if (spawnedMasks[i] == null) continue;
+
+            if (i < currentHealth)
+            {
+                if (fullMaskSprite != null) spawnedMasks[i].sprite = fullMaskSprite;
+                spawnedMasks[i].enabled = true;
             }
             else
             {
-                spawnedMasks[i].sprite = emptyMaskSprite; //[cite: 2]
+                if (emptyMaskSprite != null)
+                {
+                    spawnedMasks[i].sprite = emptyMaskSprite;
+                    spawnedMasks[i].enabled = true;
+                }
+                else
+                {
+                    spawnedMasks[i].enabled = false;
+                }
             }
         }
-    }
-
-    public void UpdateSoulUI(int currentSoul, int maxSoul)
-    {
-        if (maxSoul == 0) return; //[cite: 2]
-
-        float fillPercentage = (float)currentSoul / maxSoul; //[cite: 2]
-
-        StopAllCoroutines(); //[cite: 2]
-        StartCoroutine(AnimateSoulBar(fillPercentage)); //[cite: 2]
-    }
-
-    private IEnumerator AnimateSoulBar(float targetFill)
-    {
-        float speed = 5f; //[cite: 2]
-        while (Mathf.Abs(soulLiquidImage.fillAmount - targetFill) > 0.005f) //[cite: 2]
-        {
-            soulLiquidImage.fillAmount = Mathf.MoveTowards(soulLiquidImage.fillAmount, targetFill, speed * Time.deltaTime); //[cite: 2]
-            yield return null; //[cite: 2]
-        }
-        soulLiquidImage.fillAmount = targetFill; //[cite: 2]
     }
 }
