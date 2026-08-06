@@ -64,28 +64,67 @@ public class BossAnimationRelay : MonoBehaviour
     }
 
     // ==========================================
-    // 🌀 2. 一阶段【传送刺杀】技能动画事件
+    // 🌀 2. 背刺 / 传送技能动画事件 (Animation Event)
     // ==========================================
 
     /// <summary>
-    /// 绑定在一阶段 Disappear 消失动画【第一帧】
+    /// 绑定在 Disappear 消失动画【第一帧】
     /// </summary>
     public void OnDisappearStart()
     {
+        if (mainController == null)
+        {
+            mainController = GetComponentInParent<BossAIController>();
+        }
+
         if (mainController != null)
         {
             mainController.OnDisappearStart();
         }
+        else
+        {
+            Debug.LogError("🚨 [BossAnimationRelay] 未在父级找到 BossAIController！");
+        }
     }
 
     /// <summary>
-    /// 绑定在一阶段 Disappear 消失动画【最后一帧】
+    /// 绑定在 Disappear 消失动画【最后一帧】
     /// </summary>
     public void OnDisappearEnd()
     {
+        if (mainController == null)
+        {
+            mainController = GetComponentInParent<BossAIController>();
+        }
+
         if (mainController != null)
         {
             mainController.OnDisappearEnd();
         }
+        else
+        {
+            Debug.LogError("🚨 [BossAnimationRelay] 未在父级找到 BossAIController！");
+        }
+    }
+
+    // ==========================================
+    // ⚡ 3. 兼容二阶段反击动画事件名称 (Animation Event)
+    // 如果动画 Clip 中使用的是 OnCounterDisappearStart / End，会自动转发
+    // ==========================================
+
+    /// <summary>
+    /// 绑定在二阶段反击 Disappear 消失动画【第一帧】
+    /// </summary>
+    public void OnCounterDisappearStart()
+    {
+        OnDisappearStart();
+    }
+
+    /// <summary>
+    /// 绑定在二阶段反击 Disappear 消失动画【最后一帧】
+    /// </summary>
+    public void OnCounterDisappearEnd()
+    {
+        OnDisappearEnd();
     }
 }

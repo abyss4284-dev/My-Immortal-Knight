@@ -36,14 +36,29 @@ public class BossPhaseTwoController : MonoBehaviour
     public float portalUpOffset = 2.5f;
 
     [Header("=== 二阶段技能 2：受击反击（无预警背刺） ===")]
-    [Tooltip("反击背刺造成伤害时的硬直/后摇时间")]
-    public float counterBackstabPostDelay = 1.0f;
+    [Tooltip("反击技能冷却时间（8 秒）")]
+    public float counterBackstabCooldown = 8.0f;
     [Tooltip("消失后在异界隐身停顿等待的时间")]
     public float invisibleDuration = 0.15f;
+    [Tooltip("反击背刺造成伤害时的硬直/后摇时间")]
+    public float counterBackstabPostDelay = 1.0f;
 
     [Header("=== 动画参数配置 ===")]
     [Tooltip("二阶段传送门技能持续播放的 Bool 动画参数名称")]
     public string portalSkillBoolParam = "IsCastingPortalSkill";
+
+    [Header("=== 二阶段死亡演出设置 ===")]
+    [Tooltip("死亡慢动作缩放（0.2 表示正常速度的 20%，即 5 倍减速）")]
+    public float deathSlowMotionScale = 0.2f;
+
+    [Tooltip("场景白光过曝强度（如 3.5～5.0）")]
+    public float whiteLightIntensity = 4.0f;
+
+    [Tooltip("白光平滑过渡时间（秒，受慢动作影响会自动延长）")]
+    public float whiteFadeDuration = 0.6f;
+
+    [Tooltip("死亡播放完毕后激活的胜利 UI（可选）")]
+    public GameObject victoryUI;
 
     // 内部组件引用
     private BossAIController bossAI;
@@ -51,12 +66,16 @@ public class BossPhaseTwoController : MonoBehaviour
     private Transform playerTransform;
 
     private bool hasInitializedPhaseTwo = false;
-    private float skillCooldownTimer = 0f; // 传送门技能冷却计时器
+    private float skillCooldownTimer = 0f;            // 传送门技能冷却计时器
+    private float counterBackstabCooldownTimer = 0f;  // 受击反击冷却计时器
+
+    // 🌟 排队与占线管理变量
+    private bool isPortalSkillQueued = false;         // 传送门技能排队/占线等待标记
 
     // 受击反击技能内部状态变量
     private int currentHitCount = 0;             // 当前受击次数
     private int targetHitThreshold = 3;          // 随机触发阈值 (3-5)
-    private bool isCounterBackstabReady = false; // 是否进入“下次受击必定触发反击”状态
+    private bool isCounterBackstabReady = false; // 是否进入“受击预备反击”状态
 
     private void Awake()
     {
@@ -68,6 +87,7 @@ public class BossPhaseTwoController : MonoBehaviour
     {
         FindPlayer();
         ResetHitCounter();
+        counterBackstabCooldownTimer = counterBackstabCooldown; // 初始状态设为冷却完毕
     }
 
     private void Update()
@@ -88,19 +108,25 @@ public class BossPhaseTwoController : MonoBehaviour
             if (playerTransform == null) return;
         }
 
-        // 🌟 如果主 AI 处于 busy 状态（正在移动/普通攻击/处于背刺/正在放传送门等），不累加冷却
-        if (bossAI != null && bossAI.IsBusy)
+        // 🌟 1. 受击反击 CD 独立计算（无论 Boss 是否 Busy）
+        if (counterBackstabCooldownTimer < counterBackstabCooldown)
         {
-            return;
+            counterBackstabCooldownTimer += Time.deltaTime;
         }
 
-        // 🌟 仅在 Boss 处于空闲（非 Busy）时累加冷却时间
+        // 🌟 2. 传送门技能 CD 累加
         skillCooldownTimer += Time.deltaTime;
 
-        // 🌟 满 5 秒未发动技能，触发传送门技能
+        // 🌟 3. 检查 CD 是否已满：满 5 秒则推入“排队队列”
         if (skillCooldownTimer >= skillCooldown)
         {
-            StartCoroutine(BarragePortalSkillRoutine());
+            isPortalSkillQueued = true;
+        }
+
+        // 🌟 4. 队列消费检查：如果技能处于排队状态，且 Boss 空闲（!IsBusy），立刻释放！
+        if (isPortalSkillQueued && bossAI != null && !bossAI.IsBusy)
+        {
+            ExecutePortalSkill();
         }
     }
 
@@ -123,7 +149,6 @@ public class BossPhaseTwoController : MonoBehaviour
             newAttackPointObject.SetActive(true);
             newAttackCollider = newAttackPointObject.GetComponent<Collider2D>();
 
-            // 🌟 将新攻击点注册到 BossAIController 中，并刷新一次朝向镜像
             if (bossAI != null)
             {
                 bossAI.RegisterPhaseTwoAttackPoint(newAttackPointObject);
@@ -145,10 +170,29 @@ public class BossPhaseTwoController : MonoBehaviour
             bossAI.ResetSkillTimer();
         }
 
-        skillCooldownTimer = 0f; // 刚进入二阶段时重置计时
+        skillCooldownTimer = 0f;
+        counterBackstabCooldownTimer = counterBackstabCooldown; // 刚进入二阶段时反击冷却可用
         ResetHitCounter();
         hasInitializedPhaseTwo = true;
         Debug.Log("🔥【BossPhaseTwoController】二阶段初始化完成！");
+    }
+
+    /// <summary>
+    /// 🌟 供外部查询：是否有传送门技能正处于排队待释放状态
+    /// </summary>
+    public bool IsPortalSkillPending()
+    {
+        return isPortalSkillQueued || (skillCooldownTimer >= skillCooldown);
+    }
+
+    /// <summary>
+    /// 🌟 触发并执行传送门技能（消费排队）
+    /// </summary>
+    public void ExecutePortalSkill()
+    {
+        isPortalSkillQueued = false; // 清除排队标记
+        skillCooldownTimer = 0f;      // 重置 CD 计时器
+        StartCoroutine(BarragePortalSkillRoutine());
     }
 
     /// <summary>
@@ -158,35 +202,47 @@ public class BossPhaseTwoController : MonoBehaviour
     {
         if (!BossPhaseController.isPhaseTwoActive || BossPhaseController.isTransitioning) return;
 
-        // 🌟 状态 1：当前已处于“准备反击”状态，下一次受击立即打断并背刺
-        if (isCounterBackstabReady)
+        // 🌟 1. 正常进行受击计数累加（无论是否处于 CD，受击均正常计数）
+        if (!isCounterBackstabReady)
         {
-            Debug.Log("⚡【受击反击】触发！立即打断当前行为并进行闪现背刺！");
+            currentHitCount++;
+            Debug.Log($"💥 Boss 二阶段受击！当前次数: {currentHitCount} / {targetHitThreshold}");
 
-            // 1. 强行打断二阶段脚本及主 AI 的所有运行中协程
+            if (currentHitCount >= targetHitThreshold)
+            {
+                isCounterBackstabReady = true;
+                Debug.Log("⚠️ Boss 已激活受击反击预备状态！一旦 CD 结束将随时打断并无预警背刺！");
+            }
+        }
+
+        // 🌟 2. 检查反击条件：【预备就绪】+【反击 8 秒 CD 已满】
+        if (isCounterBackstabReady && counterBackstabCooldownTimer >= counterBackstabCooldown)
+        {
+            Debug.Log("⚡【受击反击】条件满足！立即打断当前行为并进行闪现背刺！");
+
+            // 1. 强行打断二阶段脚本及主 AI 的所有运行中协程（包括正在放的传送门）
             StopAllCoroutines();
             if (bossAI != null) bossAI.StopAllCoroutines();
 
-            // 2. 清理传送门动画 Bool 状态，确保动画状态机复位
+            // 2. 清理传送门动画 Bool 状态
             if (anim != null)
             {
                 anim.SetBool(portalSkillBoolParam, false);
             }
 
-            // 3. 重置受击计数并启动无预警背刺协程
+            // 3. 传送门 CD 重置：被打断后，传送门技能从此时重新计算 5 秒 CD
+            skillCooldownTimer = 0f;
+
+            // 4. 重置受击计数并进入 8s 反击 CD
             ResetHitCounter();
+            counterBackstabCooldownTimer = 0f;
+
+            // 5. 启动无预警背刺协程
             StartCoroutine(InstantCounterBackstabRoutine());
-            return;
         }
-
-        // 🌟 状态 2：常规受击计数累加
-        currentHitCount++;
-        Debug.Log($"💥 Boss 二阶段受击！当前次数: {currentHitCount} / {targetHitThreshold}");
-
-        if (currentHitCount >= targetHitThreshold)
+        else if (isCounterBackstabReady)
         {
-            isCounterBackstabReady = true;
-            Debug.Log("⚠️ Boss 已激活受击反击预备状态！下一次受击将强制打断并无预警背刺！");
+            Debug.Log($"⏳ 反击预备就绪，但反击技能冷却中... 剩余冷却: {(counterBackstabCooldown - counterBackstabCooldownTimer):F1}s");
         }
     }
 
@@ -197,95 +253,42 @@ public class BossPhaseTwoController : MonoBehaviour
     {
         currentHitCount = 0;
         isCounterBackstabReady = false;
+        isPortalSkillQueued = false; // 受击打断时清空排队队列
         targetHitThreshold = Random.Range(3, 6); // 生成 3, 4 或 5
     }
 
     /// <summary>
-    /// 🌟 技能 2：无预警/无传送门受击反击背刺协程
+    /// 🌟 技能 2：受击反击背刺协程（直接调用 BossAIController 的无预警背刺）
     /// </summary>
     private IEnumerator InstantCounterBackstabRoutine()
     {
         if (bossAI == null) yield break;
 
-        bossAI.IsBusy = true; // 锁定状态
+        yield return StartCoroutine(bossAI.ExecuteBackstabRoutine(withPortal: false));
 
-        // 1. 清空移动速度，停止当前移动
-        Rigidbody2D rb = GetComponent<Rigidbody2D>();
-        if (rb != null)
-        {
-            rb.linearVelocity = Vector2.zero;
-        }
-
-        // 2. 隐藏 Visual 与关闭碰撞，播放 Disappear 动画
-        Collider2D bossCol = GetComponent<Collider2D>();
-        if (bossCol != null) bossCol.enabled = false;
-
-        if (anim != null)
-        {
-            anim.SetTrigger("Disappear");
-        }
-
-        if (bossAI.visualTransform != null)
-        {
-            bossAI.visualTransform.gameObject.SetActive(false);
-        }
-
-        // 3. 隐身停顿
-        if (invisibleDuration > 0f)
-        {
-            yield return new WaitForSeconds(invisibleDuration);
-        }
-
-        // 4. 瞬间传送至玩家身后（借用 BossAIController 中定义的偏移逻辑，但不开启预警传送门）
-        if (playerTransform != null)
-        {
-            PlayerController playerCtrl = playerTransform.GetComponent<PlayerController>();
-            float playerFacingDir = (playerCtrl != null && playerCtrl.facingDirectionParam == "left") ? -1f : 1f;
-
-            // 转向面对玩家
-            bool targetFacingRight = (playerTransform.position.x > transform.position.x);
-            System.Reflection.FieldInfo facingField = typeof(BossAIController).GetField("isFacingRight", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (facingField != null) facingField.SetValue(bossAI, targetFacingRight);
-            bossAI.ApplyFacing();
-
-            // 计算 Pivot 相对根物体的偏移
-            float pivotOffset = 0f;
-            if (bossAI.pivotTransform != null)
-            {
-                pivotOffset = bossAI.pivotTransform.position.x - transform.position.x;
-            }
-
-            // 目标背刺位置计算
-            float targetPivotX = playerTransform.position.x - (playerFacingDir * bossAI.offsetBehindPlayer);
-            float targetBossX = targetPivotX - pivotOffset;
-
-            // 瞬间改变坐标
-            transform.position = new Vector3(targetBossX, transform.position.y, transform.position.z);
-        }
-
-        // 5. 重新显形并恢复碰撞箱
-        if (bossAI.visualTransform != null)
-        {
-            bossAI.visualTransform.gameObject.SetActive(true);
-        }
-        if (bossCol != null) bossCol.enabled = true;
-
-        // 6. 立即触发攻击动画与伤害判定
-        if (anim != null)
-        {
-            anim.ResetTrigger("Attack");
-            anim.SetTrigger("Attack");
-        }
-
-        yield return new WaitForSeconds(counterBackstabPostDelay); // 背刺后摇
-
-        bossAI.IsBusy = false; // 解锁 AI 状态
-        skillCooldownTimer = 0f; // 重置传送门技能冷却，防止刚背刺完立刻接着使用传送门
+        skillCooldownTimer = 0f; // 再次确保背刺结束后传送门 CD 处于正常重置状态
     }
 
-    /// <summary>
-    /// 触发二阶段新攻击点伤害判定（通过动画事件 Animation Event 调用）
-    /// </summary>
+    // ========================================================================
+    // 🌟 动画事件（Animation Events）兼容转接函数
+    // ========================================================================
+
+    public void OnCounterDisappearStart()
+    {
+        if (bossAI != null)
+        {
+            bossAI.OnDisappearStart();
+        }
+    }
+
+    public void OnCounterDisappearEnd()
+    {
+        if (bossAI != null)
+        {
+            bossAI.OnDisappearEnd();
+        }
+    }
+
     public void TriggerNewAttackDamage()
     {
         if (newAttackCollider == null) return;
@@ -318,7 +321,6 @@ public class BossPhaseTwoController : MonoBehaviour
     {
         if (bossAI == null) yield break;
 
-        // 1. 锁定 Boss AI 状态
         bossAI.IsBusy = true;
 
         Rigidbody2D rb = GetComponent<Rigidbody2D>();
@@ -327,7 +329,6 @@ public class BossPhaseTwoController : MonoBehaviour
             rb.linearVelocity = Vector2.zero;
         }
 
-        // 2. 播放技能持续动画（使用 Bool 控制）
         if (anim != null)
         {
             anim.SetFloat("Speed", 0f);
@@ -336,7 +337,6 @@ public class BossPhaseTwoController : MonoBehaviour
 
         yield return new WaitForSeconds(0.4f);
 
-        // 3. 循环生成 5 次传送门攻击
         for (int i = 0; i < portalAttackCount; i++)
         {
             if (playerTransform != null && barragePortalPrefab != null)
@@ -354,17 +354,13 @@ public class BossPhaseTwoController : MonoBehaviour
 
         yield return new WaitForSeconds(0.5f);
 
-        // 4. 退出持续动画状态
         if (anim != null)
         {
             anim.SetBool(portalSkillBoolParam, false);
         }
 
-        // 5. 解锁 Boss AI 状态
         bossAI.IsBusy = false;
-
-        // 6. 技能完整结束后重新开始 5s 冷却
-        skillCooldownTimer = 0f;
+        skillCooldownTimer = 0f; // 顺利完整释放完毕，传送门进入 5s 冷却
     }
 
     private void FindPlayer()
@@ -374,5 +370,108 @@ public class BossPhaseTwoController : MonoBehaviour
         {
             playerTransform = playerObj.transform;
         }
+    }
+
+    /// <summary>
+    /// 🌟 死亡流程总入口（由 BossAIController 在 HP <= 0 时调用）
+    /// </summary>
+    public void StartDeathSequence()
+    {
+        StartCoroutine(DeathRoutine());
+    }
+
+    private IEnumerator DeathRoutine()
+    {
+        Debug.Log("💀【Boss】血量归零，开启二阶段死亡史诗演出！");
+
+        // 1. 强行终止 Boss 主 AI 和二阶段的所有活动协程
+        if (bossAI != null)
+        {
+            bossAI.StopAllCoroutines();
+            bossAI.IsBusy = true;
+            bossAI.enabled = false;
+        }
+        StopAllCoroutines();
+
+        // 2. 禁用碰撞体与刚体，防止玩家继续攻击或发生物理挤压
+        Collider2D bossCol = GetComponent<Collider2D>();
+        if (bossCol != null) bossCol.enabled = false;
+
+        Rigidbody2D rb = GetComponent<Rigidbody2D>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+            rb.simulated = false; // 冻结物理
+        }
+
+        // 3. 🌟 开启慢动作（子弹时间）
+        Time.timeScale = deathSlowMotionScale;
+        Time.fixedDeltaTime = 0.02f * Time.timeScale; // 保证物理/动画插值平滑
+
+        // 4. 🌟 背景陷入白光（提高 Global Light2D 强度与颜色）
+        UnityEngine.Rendering.Universal.Light2D globalLight = null;
+        GameObject lanternObj = GameObject.Find("Lantern");
+        if (lanternObj != null)
+        {
+            globalLight = lanternObj.GetComponentInChildren<UnityEngine.Rendering.Universal.Light2D>(true);
+        }
+
+        if (globalLight != null)
+        {
+            StartCoroutine(FadeToWhiteLight(globalLight, whiteLightIntensity, Color.white, whiteFadeDuration));
+        }
+
+        // 5. 🌟 播放消散动画（复用之前的 Disappear Trigger）
+        if (anim != null)
+        {
+            anim.ResetTrigger("Disappear");
+            anim.SetTrigger("Disappear");
+        }
+
+        // 6. 等待动画与停顿（受 Time.timeScale 影响，1.5 秒会被放大为慢动作特写）
+        yield return new WaitForSeconds(1.5f);
+
+        // 7. 🌟 恢复游戏正常时间缩放
+        Time.timeScale = 1.0f;
+        Time.fixedDeltaTime = 0.02f;
+
+        // 8. 场景恢复/清理 Boss
+        if (bossAI != null && bossAI.visualTransform != null)
+        {
+            bossAI.visualTransform.gameObject.SetActive(false);
+        }
+
+        // 9. 弹出胜利界面
+        if (victoryUI != null)
+        {
+            victoryUI.SetActive(true);
+        }
+
+        Debug.Log("🏆【Boss】已完全消散，战斗胜利！");
+        gameObject.SetActive(false); // 彻底隐藏 Boss 游戏物体
+    }
+
+    /// <summary>
+    /// 平滑过度场景灯光至高亮纯白
+    /// </summary>
+    private IEnumerator FadeToWhiteLight(UnityEngine.Rendering.Universal.Light2D light, float targetIntensity, Color targetColor, float duration)
+    {
+        float startIntensity = light.intensity;
+        Color startColor = light.color;
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime; // 自动受 timeScale 影响
+            float t = elapsed / duration;
+
+            light.intensity = Mathf.Lerp(startIntensity, targetIntensity, t);
+            light.color = Color.Lerp(startColor, targetColor, t);
+
+            yield return null;
+        }
+
+        light.intensity = targetIntensity;
+        light.color = targetColor;
     }
 }

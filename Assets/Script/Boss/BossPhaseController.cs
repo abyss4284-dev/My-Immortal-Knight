@@ -167,7 +167,8 @@ public class BossPhaseController : MonoBehaviour
             // 执行一次背刺尝试
             yield return StartCoroutine(ExecuteBackstabAttempt());
 
-            if (isPlayerInterrupted)
+            // 🌟 仅此一处修改：仅在被打断且计数小于 3 次时才重新变黑隐身
+            if (isPlayerInterrupted && currentBackstabCount < 3)
             {
                 Debug.Log("✨ Boss 攻击被打断，开始重新隐入黑暗...");
 
@@ -195,38 +196,31 @@ public class BossPhaseController : MonoBehaviour
     {
         if (bossAI == null) yield break;
 
-        // 1. 触发 Boss 的消失/隐身传送逻辑（内部会计算背刺点并激活 portalObject）
-        if (bossAnim != null)
-        {
-            bossAnim.SetTrigger("Disappear");
-        }
-
+        // 1. 先触发消失和传送门位置计算
+        if (bossAnim != null) bossAnim.SetTrigger("Disappear");
         bossAI.OnDisappearStart();
 
-        // 🌟 2. 预警特效位置修正：优先依据传送门 (portalObject) 的位置生成
+        // 🌟 修复：直接按照 BossAI 计算传送门/背刺点的方式，实时算出确切的预警坐标
         Vector3 spawnPosition = transform.position;
-        if (bossAI.portalObject != null && bossAI.portalObject.activeSelf)
+
+        if (playerTransform != null)
         {
-            spawnPosition = bossAI.portalObject.transform.position;
-        }
-        else if (bossAI.pivotTransform != null)
-        {
-            spawnPosition = bossAI.pivotTransform.position;
+            PlayerController playerCtrl = playerTransform.GetComponent<PlayerController>();
+            float playerFacingDir = (playerCtrl != null && playerCtrl.facingDirectionParam == "left") ? -1f : 1f;
+
+            // 统一计算目标 X/Y（与 OnDisappearStart 保持完全一致）
+            float targetX = playerTransform.position.x - (playerFacingDir * bossAI.offsetBehindPlayer);
+            float targetY = playerTransform.position.y + bossAI.offsetUpPlayer;
+            spawnPosition = new Vector3(targetX, targetY, playerTransform.position.z);
         }
 
+        // 2. 生成预警特效
         GameObject currentVFXInstance = null;
         if (attackWarningVFX != null)
         {
             currentVFXInstance = Instantiate(attackWarningVFX, spawnPosition, Quaternion.identity);
-            var spriteRenderer = currentVFXInstance.GetComponentInChildren<SpriteRenderer>();
-            if (spriteRenderer != null)
-            {
-                spriteRenderer.sortingOrder = 999;
-            }
-            currentVFXInstance.SetActive(true);
+            // ...
         }
-
-        canBeCountered = true;
 
         // 3. 预警倒计时（监听玩家是否打制）
         float timer = 0f;

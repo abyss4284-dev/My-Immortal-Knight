@@ -700,6 +700,7 @@ MonoBehaviour:
   skillPostDelay: 0.8
   offsetBehindPlayer: 2
   offsetUpPlayer: 1.8
+  usePortalForTeleport: 1
 --- !u!114 &8736670469770107831
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -739,8 +740,14 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 128
   barragePortalPrefab: {fileID: 5332140039705842371, guid: 6a48c67324337714394adfa38df4bc9c, type: 3}
-  skillTriggerTime: 5
+  skillCooldown: 5
+  portalAttackCount: 5
+  timeBetweenPortals: 0.8
   portalUpOffset: 2.5
+  counterBackstabCooldown: 8
+  invisibleDuration: 0.15
+  counterBackstabPostDelay: 1
+  portalSkillBoolParam: IsCastingPortalSkill
 --- !u!1001 &3309999824954970110
 PrefabInstance:
   m_ObjectHideFlags: 0
