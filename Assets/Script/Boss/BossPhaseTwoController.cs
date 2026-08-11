@@ -23,9 +23,14 @@ public class BossPhaseTwoController : MonoBehaviour
     [Tooltip("玩家图层")]
     public LayerMask playerLayer;
 
+    // 内部自动引用的场景传送门（无需手动拖入）
+    private GameObject scenePortalObject;
+
     [Header("=== 二阶段技能 1：弹幕传送门 ===")]
     [Tooltip("传送门预制体（内含弹幕攻击判定与动画，由自身动画事件控制销毁）")]
     public GameObject barragePortalPrefab;
+    [Tooltip("Boss 身上的传送门子物体（若有，死亡时将被强行隐藏）")]
+    public GameObject portalChildObject;
     [Tooltip("技能冷却时间：未发动技能 5s 后使用")]
     public float skillCooldown = 5.0f;
     [Tooltip("传送门攻击次数")]
@@ -47,15 +52,28 @@ public class BossPhaseTwoController : MonoBehaviour
     [Tooltip("二阶段传送门技能持续播放的 Bool 动画参数名称")]
     public string portalSkillBoolParam = "IsCastingPortalSkill";
 
+    [Tooltip("死亡动画的 Trigger 参数名称")]
+    public string deathAnimTriggerParam = "Die";
+
     [Header("=== 二阶段死亡演出设置 ===")]
     [Tooltip("死亡慢动作缩放（0.2 表示正常速度的 20%，即 5 倍减速）")]
     public float deathSlowMotionScale = 0.2f;
 
-    [Tooltip("场景白光过曝强度（如 3.5～5.0）")]
-    public float whiteLightIntensity = 4.0f;
+    [Header("--- 动态生成白布遮罩配置 ---")]
+    [Tooltip("用于生成的白色遮罩 GameObject (图层层级请直接在 Prefab 的 SpriteRenderer 中设置)")]
+    public GameObject whiteOverlayPrefab;
 
-    [Tooltip("白光平滑过渡时间（秒，受慢动作影响会自动延长）")]
-    public float whiteFadeDuration = 0.6f;
+    [Tooltip("生成遮罩时的缩放倍数（需保证能盖满屏幕，默认 100x100）")]
+    public Vector2 overlaySize = new Vector2(100f, 100f);
+
+    [Tooltip("白布淡入时间（秒）")]
+    public float fadeInDuration = 0.6f;
+
+    [Tooltip("全白遮挡保持延迟时间（秒）")]
+    public float holdDuration = 0.5f;
+
+    [Tooltip("白布淡出时间（秒）")]
+    public float fadeOutDuration = 0.8f;
 
     [Tooltip("死亡播放完毕后激活的胜利 UI（可选）")]
     public GameObject victoryUI;
@@ -69,7 +87,7 @@ public class BossPhaseTwoController : MonoBehaviour
     private float skillCooldownTimer = 0f;            // 传送门技能冷却计时器
     private float counterBackstabCooldownTimer = 0f;  // 受击反击冷却计时器
 
-    // 🌟 排队与占线管理变量
+    // 排队与占线管理变量
     private bool isPortalSkillQueued = false;         // 传送门技能排队/占线等待标记
 
     // 受击反击技能内部状态变量
@@ -81,13 +99,54 @@ public class BossPhaseTwoController : MonoBehaviour
     {
         bossAI = GetComponent<BossAIController>();
         anim = GetComponentInChildren<Animator>();
+
+        // 🌟 1. 自动在场景中寻找名为 DemonPalace-Town 的传送门物体
+        FindScenePortal();
+
+        // 2. 自动隐藏 Boss 身上的技能传送门子物体（防误触发）
+        if (portalChildObject == null)
+        {
+            Transform pTransform = transform.Find("Portal");
+            if (pTransform != null) portalChildObject = pTransform.gameObject;
+        }
+    }
+
+    /// <summary>
+    /// 自动检索场景中名为 DemonPalace-Town 的物体（支持未激活/隐藏状态的物体）
+    /// </summary>
+    private void FindScenePortal()
+    {
+        if (scenePortalObject != null) return;
+
+        // 尝试寻找激活状态的物体
+        scenePortalObject = GameObject.Find("DemonPalace-Town");
+
+        // 如果物体处于禁用(Inactive)状态，GameObject.Find 找不到，采用深度搜寻保底
+        if (scenePortalObject == null)
+        {
+            Transform[] allTransforms = Resources.FindObjectsOfTypeAll<Transform>();
+            foreach (Transform t in allTransforms)
+            {
+                // 排除预制体资源，仅查找场景中的 GameObject
+                if (t.gameObject.name == "DemonPalace-Town" && t.gameObject.scene.isLoaded)
+                {
+                    scenePortalObject = t.gameObject;
+                    break;
+                }
+            }
+        }
+
+        if (scenePortalObject != null)
+        {
+            Debug.Log("🔍【BossPhaseTwoController】已成功自动定位场景传送门: DemonPalace-Town");
+        }
     }
 
     private void Start()
     {
         FindPlayer();
         ResetHitCounter();
-        counterBackstabCooldownTimer = counterBackstabCooldown; // 初始状态设为冷却完毕
+        counterBackstabCooldownTimer = counterBackstabCooldown;
     }
 
     private void Update()
@@ -108,22 +167,18 @@ public class BossPhaseTwoController : MonoBehaviour
             if (playerTransform == null) return;
         }
 
-        // 🌟 1. 受击反击 CD 独立计算（无论 Boss 是否 Busy）
         if (counterBackstabCooldownTimer < counterBackstabCooldown)
         {
             counterBackstabCooldownTimer += Time.deltaTime;
         }
 
-        // 🌟 2. 传送门技能 CD 累加
         skillCooldownTimer += Time.deltaTime;
 
-        // 🌟 3. 检查 CD 是否已满：满 5 秒则推入“排队队列”
         if (skillCooldownTimer >= skillCooldown)
         {
             isPortalSkillQueued = true;
         }
 
-        // 🌟 4. 队列消费检查：如果技能处于排队状态，且 Boss 空闲（!IsBusy），立刻释放！
         if (isPortalSkillQueued && bossAI != null && !bossAI.IsBusy)
         {
             ExecutePortalSkill();
@@ -132,13 +187,11 @@ public class BossPhaseTwoController : MonoBehaviour
 
     private void InitializePhaseTwo()
     {
-        // 1. 替换二阶段 Animator Controller
         if (anim != null && phaseTwoController != null)
         {
             anim.runtimeAnimatorController = phaseTwoController;
         }
 
-        // 2. 切换攻击判定点
         if (oldAttackPointObject != null)
         {
             oldAttackPointObject.SetActive(false);
@@ -156,7 +209,6 @@ public class BossPhaseTwoController : MonoBehaviour
             }
         }
 
-        // 3. 确保碰撞体和 Visual 显示
         if (bossAI != null)
         {
             Collider2D bossCol = GetComponent<Collider2D>();
@@ -171,38 +223,28 @@ public class BossPhaseTwoController : MonoBehaviour
         }
 
         skillCooldownTimer = 0f;
-        counterBackstabCooldownTimer = counterBackstabCooldown; // 刚进入二阶段时反击冷却可用
+        counterBackstabCooldownTimer = counterBackstabCooldown;
         ResetHitCounter();
         hasInitializedPhaseTwo = true;
         Debug.Log("🔥【BossPhaseTwoController】二阶段初始化完成！");
     }
 
-    /// <summary>
-    /// 🌟 供外部查询：是否有传送门技能正处于排队待释放状态
-    /// </summary>
     public bool IsPortalSkillPending()
     {
         return isPortalSkillQueued || (skillCooldownTimer >= skillCooldown);
     }
 
-    /// <summary>
-    /// 🌟 触发并执行传送门技能（消费排队）
-    /// </summary>
     public void ExecutePortalSkill()
     {
-        isPortalSkillQueued = false; // 清除排队标记
-        skillCooldownTimer = 0f;      // 重置 CD 计时器
+        isPortalSkillQueued = false;
+        skillCooldownTimer = 0f;
         StartCoroutine(BarragePortalSkillRoutine());
     }
 
-    /// <summary>
-    /// 🌟 受击触发接口（由 Boss 的 TakeDamage 逻辑统一调用）
-    /// </summary>
     public void OnBossTakeDamage()
     {
         if (!BossPhaseController.isPhaseTwoActive || BossPhaseController.isTransitioning) return;
 
-        // 🌟 1. 正常进行受击计数累加（无论是否处于 CD，受击均正常计数）
         if (!isCounterBackstabReady)
         {
             currentHitCount++;
@@ -215,29 +257,23 @@ public class BossPhaseTwoController : MonoBehaviour
             }
         }
 
-        // 🌟 2. 检查反击条件：【预备就绪】+【反击 8 秒 CD 已满】
         if (isCounterBackstabReady && counterBackstabCooldownTimer >= counterBackstabCooldown)
         {
             Debug.Log("⚡【受击反击】条件满足！立即打断当前行为并进行闪现背刺！");
 
-            // 1. 强行打断二阶段脚本及主 AI 的所有运行中协程（包括正在放的传送门）
             StopAllCoroutines();
             if (bossAI != null) bossAI.StopAllCoroutines();
 
-            // 2. 清理传送门动画 Bool 状态
             if (anim != null)
             {
                 anim.SetBool(portalSkillBoolParam, false);
             }
 
-            // 3. 传送门 CD 重置：被打断后，传送门技能从此时重新计算 5 秒 CD
             skillCooldownTimer = 0f;
 
-            // 4. 重置受击计数并进入 8s 反击 CD
             ResetHitCounter();
             counterBackstabCooldownTimer = 0f;
 
-            // 5. 启动无预警背刺协程
             StartCoroutine(InstantCounterBackstabRoutine());
         }
         else if (isCounterBackstabReady)
@@ -246,32 +282,22 @@ public class BossPhaseTwoController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 重置受击计数，并重新生成 3-5 次的随机阈值
-    /// </summary>
     private void ResetHitCounter()
     {
         currentHitCount = 0;
         isCounterBackstabReady = false;
-        isPortalSkillQueued = false; // 受击打断时清空排队队列
-        targetHitThreshold = Random.Range(3, 6); // 生成 3, 4 或 5
+        isPortalSkillQueued = false;
+        targetHitThreshold = Random.Range(3, 6);
     }
 
-    /// <summary>
-    /// 🌟 技能 2：受击反击背刺协程（直接调用 BossAIController 的无预警背刺）
-    /// </summary>
     private IEnumerator InstantCounterBackstabRoutine()
     {
         if (bossAI == null) yield break;
 
         yield return StartCoroutine(bossAI.ExecuteBackstabRoutine(withPortal: false));
 
-        skillCooldownTimer = 0f; // 再次确保背刺结束后传送门 CD 处于正常重置状态
+        skillCooldownTimer = 0f;
     }
-
-    // ========================================================================
-    // 🌟 动画事件（Animation Events）兼容转接函数
-    // ========================================================================
 
     public void OnCounterDisappearStart()
     {
@@ -314,9 +340,6 @@ public class BossPhaseTwoController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 🌟 技能 1：二阶段传送门弹幕攻击（连续 5 次）
-    /// </summary>
     private IEnumerator BarragePortalSkillRoutine()
     {
         if (bossAI == null) yield break;
@@ -360,7 +383,7 @@ public class BossPhaseTwoController : MonoBehaviour
         }
 
         bossAI.IsBusy = false;
-        skillCooldownTimer = 0f; // 顺利完整释放完毕，传送门进入 5s 冷却
+        skillCooldownTimer = 0f;
     }
 
     private void FindPlayer()
@@ -377,13 +400,6 @@ public class BossPhaseTwoController : MonoBehaviour
     /// </summary>
     public void StartDeathSequence()
     {
-        StartCoroutine(DeathRoutine());
-    }
-
-    private IEnumerator DeathRoutine()
-    {
-        Debug.Log("💀【Boss】血量归零，开启二阶段死亡史诗演出！");
-
         // 1. 强行终止 Boss 主 AI 和二阶段的所有活动协程
         if (bossAI != null)
         {
@@ -393,7 +409,13 @@ public class BossPhaseTwoController : MonoBehaviour
         }
         StopAllCoroutines();
 
-        // 2. 禁用碰撞体与刚体，防止玩家继续攻击或发生物理挤压
+        // 2. 强行禁用技能传送门子物体，防止误触发激活
+        if (portalChildObject != null)
+        {
+            portalChildObject.SetActive(false);
+        }
+
+        // 3. 禁用碰撞体与刚体
         Collider2D bossCol = GetComponent<Collider2D>();
         if (bossCol != null) bossCol.enabled = false;
 
@@ -401,77 +423,145 @@ public class BossPhaseTwoController : MonoBehaviour
         if (rb != null)
         {
             rb.linearVelocity = Vector2.zero;
-            rb.simulated = false; // 冻结物理
+            rb.simulated = false;
         }
 
-        // 3. 🌟 开启慢动作（子弹时间）
-        Time.timeScale = deathSlowMotionScale;
-        Time.fixedDeltaTime = 0.02f * Time.timeScale; // 保证物理/动画插值平滑
-
-        // 4. 🌟 背景陷入白光（提高 Global Light2D 强度与颜色）
-        UnityEngine.Rendering.Universal.Light2D globalLight = null;
-        GameObject lanternObj = GameObject.Find("Lantern");
-        if (lanternObj != null)
-        {
-            globalLight = lanternObj.GetComponentInChildren<UnityEngine.Rendering.Universal.Light2D>(true);
-        }
-
-        if (globalLight != null)
-        {
-            StartCoroutine(FadeToWhiteLight(globalLight, whiteLightIntensity, Color.white, whiteFadeDuration));
-        }
-
-        // 5. 🌟 播放消散动画（复用之前的 Disappear Trigger）
+        // 4. 重置动画参数，并播放指定的死亡动画
         if (anim != null)
         {
+            anim.SetBool(portalSkillBoolParam, false);
+            anim.ResetTrigger("Attack");
             anim.ResetTrigger("Disappear");
-            anim.SetTrigger("Disappear");
+            anim.ResetTrigger("Hit");
+            anim.SetFloat("Speed", 0f);
+
+            // 触发死亡 Trigger
+            anim.ResetTrigger(deathAnimTriggerParam);
+            anim.SetTrigger(deathAnimTriggerParam);
         }
 
-        // 6. 等待动画与停顿（受 Time.timeScale 影响，1.5 秒会被放大为慢动作特写）
-        yield return new WaitForSeconds(1.5f);
+        // 5. 开启慢动作（子弹时间）
+        Time.timeScale = deathSlowMotionScale;
+        Time.fixedDeltaTime = 0.02f * Time.timeScale;
 
-        // 7. 🌟 恢复游戏正常时间缩放
+        // 6. 启动独立的白布过渡与胜利 UI 显示
+        SpawnWhiteOverlayProcess();
+
+        Debug.Log("💀【Boss】死亡流程已启动，播放死亡动画中...");
+    }
+
+    /// <summary>
+    /// 🌟 动画事件（Animation Event）：在死亡动画最后一帧由 BossAnimationRelay 中继调用
+    /// 作用：重新激活场景传送门 DemonPalace-Town，并销毁 Boss 物体
+    /// </summary>
+    public void OnDeathAnimFinished()
+    {
+        Debug.Log("🎬【Animation Event】Boss 死亡动画最后一帧到达，恢复游戏逻辑！");
+
+        // 1. 恢复正常游戏时间缩放（防止子弹时间停留在 0.2）
         Time.timeScale = 1.0f;
         Time.fixedDeltaTime = 0.02f;
 
-        // 8. 场景恢复/清理 Boss
-        if (bossAI != null && bossAI.visualTransform != null)
+        // 🌟 2. 确保引用并重新激活场景中的出口传送门 DemonPalace-Town
+        if (scenePortalObject == null)
         {
-            bossAI.visualTransform.gameObject.SetActive(false);
+            FindScenePortal();
         }
 
-        // 9. 弹出胜利界面
+        if (scenePortalObject != null)
+        {
+            scenePortalObject.SetActive(true);
+            Debug.Log("🌀【通关】场景传送门 DemonPalace-Town 已成功激活！");
+        }
+        else
+        {
+            Debug.LogError("🚨 [BossPhaseTwoController] 未能在场景中找到名为 'DemonPalace-Town' 的物体！");
+        }
+
+        // 3. 彻底销毁 Boss 物体
+        Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// 生成并独立托管白布遮罩与胜利 UI 逻辑
+    /// </summary>
+    private void SpawnWhiteOverlayProcess()
+    {
+        GameObject instanceObj = null;
+
+        if (whiteOverlayPrefab != null)
+        {
+            instanceObj = Instantiate(whiteOverlayPrefab, Vector3.zero, Quaternion.identity);
+        }
+        else
+        {
+            instanceObj = new GameObject("DeathWhiteOverlay_Fallback");
+            instanceObj.transform.position = Vector3.zero;
+        }
+
+        instanceObj.transform.localScale = new Vector3(overlaySize.x, overlaySize.y, 1f);
+
+        SpriteRenderer sr = instanceObj.GetComponentInChildren<SpriteRenderer>();
+        if (sr == null)
+        {
+            sr = instanceObj.AddComponent<SpriteRenderer>();
+        }
+
+        sr.color = new Color(1f, 1f, 1f, 0f);
+
+        // 动态添加独立 Runner，确保 Boss 被 Destroy 后白布遮罩与胜利界面依然正常运行
+        WhiteOverlayFadeRunner runner = instanceObj.AddComponent<WhiteOverlayFadeRunner>();
+        runner.StartFadeProcess(sr, fadeInDuration, holdDuration, fadeOutDuration, victoryUI);
+    }
+}
+
+/// <summary>
+/// 独立托管白布淡入淡出及胜利 UI 的辅助组件（运行时自动挂载至遮罩物体）
+/// </summary>
+public class WhiteOverlayFadeRunner : MonoBehaviour
+{
+    public void StartFadeProcess(SpriteRenderer sr, float fadeIn, float hold, float fadeOut, GameObject victoryUI)
+    {
+        StartCoroutine(FadeRoutine(sr, fadeIn, hold, fadeOut, victoryUI));
+    }
+
+    private IEnumerator FadeRoutine(SpriteRenderer sr, float fadeIn, float hold, float fadeOut, GameObject victoryUI)
+    {
+        // 1. 淡入 (0 -> 1)
+        float elapsed = 0f;
+        while (elapsed < fadeIn)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float alpha = Mathf.Clamp01(elapsed / fadeIn);
+            if (sr != null) sr.color = new Color(1f, 1f, 1f, alpha);
+            yield return null;
+        }
+        if (sr != null) sr.color = new Color(1f, 1f, 1f, 1f);
+
+        // 2. 保持全白
+        if (hold > 0f)
+        {
+            yield return new WaitForSecondsRealtime(hold);
+        }
+
+        // 3. 淡出 (1 -> 0)
+        elapsed = 0f;
+        while (elapsed < fadeOut)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float alpha = Mathf.Clamp01(1f - (elapsed / fadeOut));
+            if (sr != null) sr.color = new Color(1f, 1f, 1f, alpha);
+            yield return null;
+        }
+        if (sr != null) sr.color = new Color(1f, 1f, 1f, 0f);
+
+        // 4. 弹出胜利界面
         if (victoryUI != null)
         {
             victoryUI.SetActive(true);
         }
 
-        Debug.Log("🏆【Boss】已完全消散，战斗胜利！");
-        gameObject.SetActive(false); // 彻底隐藏 Boss 游戏物体
-    }
-
-    /// <summary>
-    /// 平滑过度场景灯光至高亮纯白
-    /// </summary>
-    private IEnumerator FadeToWhiteLight(UnityEngine.Rendering.Universal.Light2D light, float targetIntensity, Color targetColor, float duration)
-    {
-        float startIntensity = light.intensity;
-        Color startColor = light.color;
-        float elapsed = 0f;
-
-        while (elapsed < duration)
-        {
-            elapsed += Time.deltaTime; // 自动受 timeScale 影响
-            float t = elapsed / duration;
-
-            light.intensity = Mathf.Lerp(startIntensity, targetIntensity, t);
-            light.color = Color.Lerp(startColor, targetColor, t);
-
-            yield return null;
-        }
-
-        light.intensity = targetIntensity;
-        light.color = targetColor;
+        // 5. 销毁白布遮罩物体本身
+        Destroy(gameObject);
     }
 }

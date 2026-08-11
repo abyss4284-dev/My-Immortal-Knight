@@ -403,7 +403,14 @@ public class PlayerController : MonoBehaviour
 
         if (currentHealth <= 0)
         {
-            Die();
+            // 🌟 必须在 Die() 前面加这一段！
+            PlayerSkillManager skillManager = GetComponent<PlayerSkillManager>();
+            if (skillManager != null && skillManager.CheckRebirthCondition())
+            {
+                return; // 成功拦截！直接 return，不执行下面的 Die()
+            }
+
+            Die(); // 只有不满足条件才进入真正的死亡
             return;
         }
 

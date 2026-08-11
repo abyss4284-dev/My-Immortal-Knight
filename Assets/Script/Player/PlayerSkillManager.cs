@@ -3,8 +3,9 @@ using System.Collections;
 
 public class PlayerSkillManager : MonoBehaviour
 {
-    // 🌟 核心改进：定义静态变量用于跨场景保存下砸技能状态
+    // 🌟 静态变量：用于跨场景记忆下砸技能与单次复活状态
     public static bool savedHasGroundSlam = false;
+    public static bool hasUsedRebirthInBattle = false; // 🌟 标志位：本次面对 Boss 是否已使用过复活
 
     [Header("蓝条 (Mana) 设置")]
     public int maxMana = 100;
@@ -37,9 +38,24 @@ public class PlayerSkillManager : MonoBehaviour
     public float burstYOffset = 0.5f;        // 向上偏离距离（在 Inspector 中可微调）
     public float burstVFXDestroyDelay = 0.8f;// 手动指定的特效销毁时长（备用）
 
+    [Header("🔥 复活被动设置 (Resurrection Passive)")]
+    [Tooltip("玩家身上的火焰子物体（包含 Animator 播放火焰与爆裂动画）")]
+    public GameObject flameChildObject;
+    [Tooltip("玩家身上的复活确认 UI 子物体")]
+    public GameObject rebirthUIObject;
+    [Tooltip("火焰爆裂动画的 Trigger 参数名称")]
+    public string explosionTriggerParam = "Explode";
+    [Tooltip("Boss 触发复活被动的血量百分比阈值 (0.4 代表 40%)")]
+    public float bossHealthThreshold = 0.4f;
+
+    // 内部状态控制标记
+    private bool isAwaitingRebirthChoice = false; // 是否处于等待选择复活状态
+    private bool isRebirthing = false;            // 是否处于正在播放复活爆裂动画状态
+
     private PlayerController playerController;
     private Rigidbody2D rb;
     private SpriteRenderer[] playerSprites;
+    private Animator flameAnimator;
 
     [Header("安全探测设置")]
     public Transform blinkTargetMarker;
@@ -49,10 +65,24 @@ public class PlayerSkillManager : MonoBehaviour
     {
         playerController = GetComponent<PlayerController>();
         rb = GetComponent<Rigidbody2D>();
+
+        // 获取火焰物体上的 Animator，并支持暂停时不受 Time.timeScale 影响
+        if (flameChildObject != null)
+        {
+            flameAnimator = flameChildObject.GetComponent<Animator>();
+            if (flameAnimator != null)
+            {
+                flameAnimator.updateMode = AnimatorUpdateMode.UnscaledTime;
+            }
+        }
     }
 
     void Start()
     {
+        // 初始确保火焰和 UI 处于关闭状态
+        if (flameChildObject != null) flameChildObject.SetActive(false);
+        if (rebirthUIObject != null) rebirthUIObject.SetActive(false);
+
         // 恢复蓝量
         if (PlayerController.savedMana != -1)
         {
@@ -63,7 +93,7 @@ public class PlayerSkillManager : MonoBehaviour
             currentMana = maxMana;
         }
 
-        // 🌟 跨场景恢复技能解锁状态
+        // 跨场景恢复技能解锁状态
         hasGroundSlam = savedHasGroundSlam;
 
         playerSprites = GetComponentsInChildren<SpriteRenderer>();
@@ -71,6 +101,15 @@ public class PlayerSkillManager : MonoBehaviour
 
     void Update()
     {
+        // 🌟 优先处理“复活确认环节”的按键响应 (Y / N)，此时 Time.timeScale 为 0，不受暂停影响
+        if (isAwaitingRebirthChoice)
+        {
+            HandleRebirthInput();
+            return; // 处于等待响应状态时禁用其他技能按键输入
+        }
+
+        if (isRebirthing) return; // 播放复活动画期间禁用技能
+
         // 按 L 键触发闪现
         if (Input.GetKeyDown(KeyCode.L) && Time.time >= nextBlinkTime)
         {
@@ -83,11 +122,155 @@ public class PlayerSkillManager : MonoBehaviour
             TryCastWaterSkill();
         }
 
-        // 🌟 监听下砸技能输入（只有在空中且解锁技能后才可使用）
+        // 监听下砸技能输入（只有在空中且解锁技能后才可使用）
         if (hasGroundSlam && !isSlamming && (Input.GetKeyDown(slamKey) || (Input.GetKey(KeyCode.S) && Input.GetKeyDown(KeyCode.J))))
         {
             TryCastGroundSlam();
         }
+    }
+
+    /// <summary>
+    /// 🌟 死亡条件检测逻辑：由 PlayerController 在致命伤处调用
+    /// 返回 true：代表成功拦截死亡，进入复活选择环节
+    /// 返回 false：代表不满足复活条件（如超过使用次数或 Boss 血量不足），直接进入常规死亡流程
+    /// </summary>
+    public bool CheckRebirthCondition()
+    {
+        // 🌟 检查：如果本次战斗已经触发过复活，则不再触发
+        if (hasUsedRebirthInBattle)
+        {
+            Debug.Log("⚠️【复活被动】本次 Boss 战已使用过复活机制，无法再次复活！");
+            return false;
+        }
+
+        // 读取 BossAIController 内部的静态 int 变量 currentHealth 与 maxHealth
+        if (BossAIController.isBoss && BossAIController.maxHealth > 0)
+        {
+            float healthRatio = (float)BossAIController.currentHealth / BossAIController.maxHealth;
+
+            if (healthRatio < bossHealthThreshold)
+            {
+                EnterRebirthConfirmationPhase();
+                return true; // 成功拦截常规死亡
+            }
+        }
+
+        return false; // 不满足复活条件
+    }
+
+    /// <summary>
+    /// 开启复活确认环节
+    /// </summary>
+    private void EnterRebirthConfirmationPhase()
+    {
+        isAwaitingRebirthChoice = true;
+        hasUsedRebirthInBattle = true; // 🌟 标记本次 Boss 战中复活已使用
+
+        // 1. 隐藏主角本身的渲染，并挂起刚体运动/物理
+        SetPlayerVisibility(false);
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+            rb.simulated = false;
+        }
+
+        // 2. 激活摇曳火焰和复活选择 UI
+        if (flameChildObject != null) flameChildObject.SetActive(true);
+        if (rebirthUIObject != null) rebirthUIObject.SetActive(true);
+
+        // 🌟 3. 游戏暂停
+        Time.timeScale = 0f;
+
+        Debug.Log("🔥【复活被动】Boss 血量低于 40%！游戏暂停，玩家化作摇曳火焰等待确认 (Y/N)...");
+    }
+
+    /// <summary>
+    /// 监听按键输入 (Y / N)
+    /// </summary>
+    private void HandleRebirthInput()
+    {
+        // 🌟 按下 Y 键确认复活
+        if (Input.GetKeyDown(KeyCode.Y))
+        {
+            isAwaitingRebirthChoice = false;
+            isRebirthing = true;
+
+            // 🌟 恢复游戏时间流逝
+            Time.timeScale = 1f;
+
+            if (rebirthUIObject != null) rebirthUIObject.SetActive(false);
+
+            // 触发火焰爆裂动画
+            if (flameAnimator != null)
+            {
+                flameAnimator.SetTrigger(explosionTriggerParam);
+            }
+
+            Debug.Log("💥 玩家按下了 [Y] 键，时间恢复，触发火焰爆裂准备复活！");
+        }
+        // 🌟 按下 N 键拒绝复活
+        else if (Input.GetKeyDown(KeyCode.N))
+        {
+            isAwaitingRebirthChoice = false;
+
+            // 🌟 恢复游戏时间流逝
+            Time.timeScale = 1f;
+
+            if (rebirthUIObject != null) rebirthUIObject.SetActive(false);
+            if (flameChildObject != null) flameChildObject.SetActive(false);
+
+            SetPlayerVisibility(true);
+            if (rb != null) rb.simulated = true;
+
+            // 拒绝复活，显现后调用 PlayerController 的 Die() 方法
+            if (playerController != null)
+            {
+                playerController.SendMessage("Die", SendMessageOptions.DontRequireReceiver);
+            }
+
+            Debug.Log("💀 玩家按下了 [N] 键，时间恢复，拒绝复活进入死亡流程。");
+        }
+    }
+
+    /// <summary>
+    /// 🌟 动画事件（Animation Event）：挂载于“火焰爆裂动画”最后一帧
+    /// 作用：爆裂结束后，主角重新显现，恢复全满状态并获得短暂无敌
+    /// </summary>
+    public void OnRebirthAnimFinished()
+    {
+        isRebirthing = false;
+
+        // 1. 隐藏火焰子物体
+        if (flameChildObject != null) flameChildObject.SetActive(false);
+
+        // 2. 重新显示玩家并开启物理
+        SetPlayerVisibility(true);
+        if (rb != null) rb.simulated = true;
+
+        // 3. 恢复满血满蓝
+        currentMana = maxMana;
+        PlayerController.savedMana = currentMana;
+
+        if (playerController != null)
+        {
+            playerController.currentHealth = playerController.maxHealth;
+            PlayerController.savedHealth = playerController.currentHealth;
+            playerController.isDead = false;
+
+            // 🌟 4. 触发玩家短暂无敌状态（直接启动 PlayerController 中的 InvincibleRoutine）
+            playerController.StartCoroutine("InvincibleRoutine");
+        }
+
+        Debug.Log("✨【复活成功】主角恢复满血满蓝，并进入短暂无敌状态！");
+    }
+
+    /// <summary>
+    /// 🌟 静态方法：在存档点交互或加载存档时调用，重置复活次数
+    /// </summary>
+    public static void ResetRebirthCount()
+    {
+        hasUsedRebirthInBattle = false;
+        Debug.Log("💾【存档重置】复活次数已充能完毕！");
     }
 
     /// <summary>
@@ -96,7 +279,7 @@ public class PlayerSkillManager : MonoBehaviour
     public void UnlockGroundSlam()
     {
         hasGroundSlam = true;
-        savedHasGroundSlam = true; // 🌟 同步保存到静态变量中，确保切场景后仍生效
+        savedHasGroundSlam = true;
         Debug.Log("✨ [PlayerSkillManager] 下砸技能已正式解锁并存入跨场景记忆！");
     }
 
@@ -124,26 +307,21 @@ public class PlayerSkillManager : MonoBehaviour
     {
         isSlamming = true;
 
-        // 1. 隐藏玩家渲染
         SetPlayerVisibility(false);
 
-        // 2. 确定下砸特效生成点（与水炮生成点一致）
         Vector3 spawnPos = (spawnPoint != null)
             ? spawnPoint.position
             : transform.position + new Vector3(0f, -0.8f, 0f);
 
-        // 3. 生成共用的水流特效，并将其朝向修改为向下（旋转 -90 度）
         GameObject slamFX = null;
         if (waterProjectilePrefab != null)
         {
             slamFX = Instantiate(waterProjectilePrefab, spawnPos, Quaternion.Euler(0, 0, -90f));
             slamFX.transform.SetParent(transform);
 
-            // 禁用 WaterProjectile 脚本逻辑
             WaterProjectile proj = slamFX.GetComponent<WaterProjectile>();
             if (proj != null) proj.enabled = false;
 
-            // 清空刚体速度并设为 Kinematic
             Rigidbody2D fxRb = slamFX.GetComponent<Rigidbody2D>();
             if (fxRb != null)
             {
@@ -155,37 +333,29 @@ public class PlayerSkillManager : MonoBehaviour
             if (fxCol != null) fxCol.enabled = false;
         }
 
-        // 4. 开始向下急速移动并持续检测撞击
         bool hasHit = false;
         Transform groundCheck = playerController != null ? playerController.groundCheck : transform;
 
         while (!hasHit)
         {
-            // 向下赋予速度
             rb.linearVelocity = new Vector2(0f, -slamSpeed);
 
-            // 以 groundCheck（地面检查点）为准进行圆圈碰撞检测
             Collider2D hit = Physics2D.OverlapCircle(groundCheck.position, 0.4f, slamHitLayers);
 
             if (hit != null)
             {
                 hasHit = true;
 
-                // 销毁跟随玩家的下砸水流特效
                 if (slamFX != null) Destroy(slamFX);
 
-                // 5. 计算水花特效生成位置（基于 groundCheck 向上偏移 burstYOffset）
                 Vector3 burstSpawnPos = groundCheck.position + Vector3.up * burstYOffset;
 
-                // 6. 生成水花特效并实现播放完毕后精准销毁
                 if (waterBurstVFXPrefab != null)
                 {
                     GameObject burst = Instantiate(waterBurstVFXPrefab, burstSpawnPos, Quaternion.identity);
 
-                    // 动态计算特效精准销毁时长
                     float destroyTime = burstVFXDestroyDelay;
 
-                    // 情况 A：如果是粒子系统（ParticleSystem），获取粒子实际播放总时长
                     ParticleSystem ps = burst.GetComponent<ParticleSystem>();
                     if (ps == null) ps = burst.GetComponentInChildren<ParticleSystem>();
 
@@ -194,7 +364,6 @@ public class PlayerSkillManager : MonoBehaviour
                         var main = ps.main;
                         destroyTime = main.duration + main.startLifetime.constantMax;
                     }
-                    // 情况 B：如果是 Animator 动画，获取当前动画剪辑的时长
                     else
                     {
                         Animator anim = burst.GetComponent<Animator>();
@@ -206,20 +375,16 @@ public class PlayerSkillManager : MonoBehaviour
                         }
                     }
 
-                    // 精准播放完毕后立刻销毁
                     Destroy(burst, destroyTime);
                 }
 
-                // 重新显现玩家
                 SetPlayerVisibility(true);
 
-                // 判断击中类型：Enemy 还是 Ground
                 if (hit.CompareTag("Enemy"))
                 {
                     hit.SendMessageUpwards("TakeDamage", slamDamage, SendMessageOptions.DontRequireReceiver);
                     Debug.Log($"💥 下砸命中敌人 [{hit.name}]，造成 {slamDamage} 点伤害！");
 
-                    // 施加向上的反弹力
                     rb.linearVelocity = new Vector2(rb.linearVelocity.x, reboundForce);
                 }
                 else if (hit.CompareTag("Ground"))

@@ -41,6 +41,7 @@ public class SavePoint : MonoBehaviour
         if (isPlayerInRange && Input.GetKeyDown(interactKey))
         {
             ActivateSavePoint();
+            PlayerSkillManager.ResetRebirthCount();
         }
     }
 

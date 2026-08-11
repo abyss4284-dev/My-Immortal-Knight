@@ -81,7 +81,7 @@ SpriteRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: 2
+  m_SortingOrder: 4
   m_MaskInteraction: 0
   m_Sprite: {fileID: -750047184722822154, guid: 1914d95466e3d4341a618c35a56d5f82, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -740,6 +740,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 128
   barragePortalPrefab: {fileID: 5332140039705842371, guid: 6a48c67324337714394adfa38df4bc9c, type: 3}
+  portalChildObject: {fileID: 0}
   skillCooldown: 5
   portalAttackCount: 5
   timeBetweenPortals: 0.8
@@ -748,6 +749,14 @@ MonoBehaviour:
   invisibleDuration: 0.15
   counterBackstabPostDelay: 1
   portalSkillBoolParam: IsCastingPortalSkill
+  deathAnimTriggerParam: Die
+  deathSlowMotionScale: 0.5
+  whiteOverlayPrefab: {fileID: 8278973229495864133, guid: ff5729a9cef54ae45b23abd78cafe524, type: 3}
+  overlaySize: {x: 100, y: 100}
+  fadeInDuration: 0.6
+  holdDuration: 0.5
+  fadeOutDuration: 0.8
+  victoryUI: {fileID: 0}
 --- !u!1001 &3309999824954970110
 PrefabInstance:
   m_ObjectHideFlags: 0

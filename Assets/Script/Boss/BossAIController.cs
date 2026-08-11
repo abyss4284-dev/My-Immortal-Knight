@@ -3,9 +3,10 @@ using System.Collections;
 
 public class BossAIController : MonoBehaviour
 {
+    public static bool isBoss = true;
     [Header("=== 基础属性 ===")]
-    public int maxHealth = 500;
-    public int currentHealth;
+    public static int maxHealth = 500;
+    public static int currentHealth;
     public int attackDamage = 1;         // 普通攻击伤害
     public float moveSpeed = 3f;          // 追击移动速度
 

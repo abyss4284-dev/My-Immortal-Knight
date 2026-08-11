@@ -17,8 +17,8 @@ public class BossPhaseController : MonoBehaviour
     public bool changeColorOnDark = false;
     public Color darkColor = new Color(0.2f, 0f, 0f, 1f); // 默认暗红色
 
-    [Header("背刺与闪光提示参数")]
-    public GameObject attackWarningVFX;        // 攻击前 1 秒的闪光提示特效Prefab/子物体
+    [Header("背刺与提示参数")]
+    public GameObject attackWarningVFX;        // 预警特效 Prefab
     public float warningDuration = 1.0f;       // 预警（可反制）时间（1秒）
 
     [Header("状态标记（静态变量：供其它脚本直接调用）")]
@@ -84,9 +84,9 @@ public class BossPhaseController : MonoBehaviour
         if (globalLight == null) FindGlobalLightInLantern();
 
         // 血量低于 60% 触发转阶段
-        if (!isTransitioning && !isPhaseTwoActive && bossAI != null && bossAI.maxHealth > 0)
+        if (!isTransitioning && !isPhaseTwoActive && bossAI != null && BossAIController.maxHealth > 0)
         {
-            float healthPercent = (float)bossAI.currentHealth / bossAI.maxHealth;
+            float healthPercent = (float)BossAIController.currentHealth / BossAIController.maxHealth;
             if (healthPercent <= 0.6f)
             {
                 StartCoroutine(StartPhaseTransitionRoutine());
@@ -134,7 +134,7 @@ public class BossPhaseController : MonoBehaviour
             bossAI.enabled = false; // 暂停 Boss 常规 Update AI 逻辑
         }
 
-        // 🌟 防护机制：转阶段期间关闭碰撞体 & 锁定重力并冻结速度，防止撞玩家或掉落
+        // 防护机制：转阶段期间关闭碰撞体 & 锁定重力并冻结速度，防止撞玩家或掉落
         if (bossCollider != null)
         {
             bossCollider.enabled = false;
@@ -162,27 +162,19 @@ public class BossPhaseController : MonoBehaviour
             isPlayerInterrupted = false;
 
             currentBackstabCount++;
-            Debug.Log($"⚔️ 发起第 {currentBackstabCount} 次背刺轮次/攻击！");
+            Debug.Log($"⚔️ 发起第 {currentBackstabCount} 次背刺轮次！");
 
-            // 执行一次背刺尝试
+            // 执行单次背刺尝试
             yield return StartCoroutine(ExecuteBackstabAttempt());
 
-            // 🌟 仅此一处修改：仅在被打断且计数小于 3 次时才重新变黑隐身
-            if (isPlayerInterrupted && currentBackstabCount < 3)
+            // 本轮攻击结束后，如果未达到 3 次，Boss 再次在暗中隐形，维持黑暗准备下一次攻击
+            if (currentBackstabCount < 3)
             {
-                Debug.Log("✨ Boss 攻击被打断，开始重新隐入黑暗...");
-
-                // 🌟 先开始将场景变黑
-                SetSceneDarkness(true);
-
-                // 🌟 关键等待：等待场景平滑变暗的 fadeDuration 时间完全结束（场景彻底全黑）
-                yield return new WaitForSeconds(fadeDuration);
-
-                // 🌟 场景彻底变黑后，才悄悄恢复视觉层，为下一次背刺显示做准备！
                 if (bossAI != null && bossAI.visualTransform != null)
                 {
-                    bossAI.visualTransform.gameObject.SetActive(true);
+                    bossAI.visualTransform.gameObject.SetActive(false);
                 }
+                SetSceneDarkness(true); // 确保维持黑暗状态
             }
         }
 
@@ -190,54 +182,63 @@ public class BossPhaseController : MonoBehaviour
     }
 
     /// <summary>
-    /// 单次背刺逻辑
+    /// 单次背刺逻辑（第一时间锁定坐标，且未反制时前两次攻击全程保持黑暗）
     /// </summary>
     private IEnumerator ExecuteBackstabAttempt()
     {
         if (bossAI == null) yield break;
 
-        // 1. 先触发消失和传送门位置计算
-        if (bossAnim != null) bossAnim.SetTrigger("Disappear");
-        bossAI.OnDisappearStart();
-
-        // 🌟 修复：直接按照 BossAI 计算传送门/背刺点的方式，实时算出确切的预警坐标
-        Vector3 spawnPosition = transform.position;
-
+        // 🌟 1. 【坐标第一时间锁定】：在 Warning 生成时刻，立即计算并锁定背刺的绝对目标坐标
+        Vector3 targetPosition = transform.position;
         if (playerTransform != null)
         {
             PlayerController playerCtrl = playerTransform.GetComponent<PlayerController>();
             float playerFacingDir = (playerCtrl != null && playerCtrl.facingDirectionParam == "left") ? -1f : 1f;
 
-            // 统一计算目标 X/Y（与 OnDisappearStart 保持完全一致）
             float targetX = playerTransform.position.x - (playerFacingDir * bossAI.offsetBehindPlayer);
             float targetY = playerTransform.position.y + bossAI.offsetUpPlayer;
-            spawnPosition = new Vector3(targetX, targetY, playerTransform.position.z);
+            targetPosition = new Vector3(targetX, targetY, playerTransform.position.z);
         }
 
-        // 2. 生成预警特效
+        // 🌟 2. 生成预警特效在锁定的绝对坐标上
         GameObject currentVFXInstance = null;
         if (attackWarningVFX != null)
         {
-            currentVFXInstance = Instantiate(attackWarningVFX, spawnPosition, Quaternion.identity);
-            // ...
+            currentVFXInstance = Instantiate(attackWarningVFX, targetPosition, Quaternion.identity);
+
+            SpriteRenderer sr = currentVFXInstance.GetComponentInChildren<SpriteRenderer>();
+            if (sr != null) sr.sortingOrder = 999;
         }
 
-        // 3. 预警倒计时（监听玩家是否打制）
+        // 预警期间 Boss 保持隐形/隐藏
+        if (bossAI.visualTransform != null)
+        {
+            bossAI.visualTransform.gameObject.SetActive(false);
+        }
+
+        // 3. 开启玩家反制窗口期
+        canBeCountered = true;
+
+        // 4. 预警倒计时（监听玩家是否按下 F 进行反制）
         float timer = 0f;
         while (timer < warningDuration)
         {
+            // 🌟 分支 A：玩家按 F 成功反制打断
             if (isPlayerInterrupted)
             {
-                canBeCountered = false;
+                canBeCountered = false; // 关闭反制窗口期
 
                 if (currentVFXInstance != null) Destroy(currentVFXInstance);
 
-                SetSceneDarkness(false);
-
+                // 反击打断成功：Boss 瞬间出现在锁定的目标点并呈现打断/受击表现
+                transform.position = targetPosition;
                 if (bossAI.visualTransform != null)
                 {
                     bossAI.visualTransform.gameObject.SetActive(true);
                 }
+
+                // 成功打断时，灯光短暂变亮以提供“反击成功”的强烈视觉反馈
+                SetSceneDarkness(false);
 
                 if (bossAnim != null)
                 {
@@ -246,36 +247,44 @@ public class BossPhaseController : MonoBehaviour
                 }
 
                 yield return new WaitForSeconds(1.2f);
-                yield break;
+                yield break; // 成功打断，提前退出单次背刺
             }
 
             timer += Time.deltaTime;
             yield return null;
         }
 
-        canBeCountered = false;
+        // 🌟 分支 B：玩家未按 F（选择走位规避或超时）
+        canBeCountered = false; // 窗口期结束
+        if (currentVFXInstance != null) Destroy(currentVFXInstance);
 
-        if (currentVFXInstance != null)
-        {
-            Destroy(currentVFXInstance);
-        }
+        // 5. 将 Boss 严格传送至【步骤 1 锁定好的 targetPosition】，玩家跑开了就能躲掉伤害！
+        transform.position = targetPosition;
 
-        // 4. 执行传送背刺（此时会精确按 Pivot 对齐新坐标）
-        bossAI.OnDisappearEnd();
-
+        // 显示 Boss 视觉
         if (bossAI.visualTransform != null)
         {
             bossAI.visualTransform.gameObject.SetActive(true);
         }
 
+        // 🌟 6. 【灯光控制】：如果不是最后一次攻击（第 1、2 次），场景保持黑暗，决不变亮！
+        // 只有到了第 3 次（最后一次攻击），才开始点亮场景恢复光明！
+        if (currentBackstabCount == 3)
+        {
+            SetSceneDarkness(false);
+        }
+
+        // 7. 播放背刺攻击动画与判定伤害
         if (bossAnim != null)
         {
             bossAnim.ResetTrigger("Attack");
             bossAnim.SetTrigger("Attack");
         }
 
+        // 判定伤害（若玩家已走出预警点范围，将不会被命中）
         bossAI.TriggerAttackDamage();
 
+        // 8. 攻击后摇等待
         yield return new WaitForSeconds(bossAI.skillPostDelay);
     }
 
@@ -340,7 +349,7 @@ public class BossPhaseController : MonoBehaviour
             phaseUI.SetActive(false);
         }
 
-        // 🌟 转阶段彻底结束，恢复碰撞体与重力
+        // 转阶段彻底结束，恢复碰撞体与重力
         if (bossCollider != null)
         {
             bossCollider.enabled = true;
@@ -361,7 +370,7 @@ public class BossPhaseController : MonoBehaviour
             bossAI.enabled = true; // 恢复 Boss 常规 AI 逻辑
         }
 
-        SetSceneDarkness(false); // 恢复原本灯光
+        SetSceneDarkness(false); // 确保恢复原本正常灯光
 
         Debug.Log("🌕 转阶段完成！场景重新点亮，Boss 正式进入二阶段！");
     }

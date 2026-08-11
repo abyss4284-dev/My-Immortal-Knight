@@ -127,4 +127,29 @@ public class BossAnimationRelay : MonoBehaviour
     {
         OnDisappearEnd();
     }
+
+    // ==========================================
+    // 💀 4. 死亡动画结束事件 (Animation Event)
+    // ==========================================
+
+    /// <summary>
+    /// 🌟 绑定在 Die / Death 死亡动画【最后一帧】
+    /// 将动画事件从中继转发给 BossPhaseTwoController 销毁 Boss 父物体
+    /// </summary>
+    public void OnDeathAnimFinished()
+    {
+        if (phaseTwoController == null)
+        {
+            phaseTwoController = GetComponentInParent<BossPhaseTwoController>();
+        }
+
+        if (phaseTwoController != null)
+        {
+            phaseTwoController.OnDeathAnimFinished();
+        }
+        else
+        {
+            Debug.LogError("🚨 [BossAnimationRelay] 未在父级找到 BossPhaseTwoController！");
+        }
+    }
 }
