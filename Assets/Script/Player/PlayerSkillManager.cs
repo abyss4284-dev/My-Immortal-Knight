@@ -31,7 +31,7 @@ public class PlayerSkillManager : MonoBehaviour
     public int slamManaCost = 20;            // 下砸蓝量消耗
     public float slamSpeed = 25f;            // 向下冲刺速度
     public int slamDamage = 40;              // 敌人受击伤害
-    public float reboundForce = 12f;         // 击中敌人时的向上反推力
+    public float reboundForce = 6f;         // 击中敌人时的向上反推力
     public GameObject waterBurstVFXPrefab;  // 触地/击中时在 GroundCheck 点播放的水花迸发特效
     public LayerMask slamHitLayers;          // 撞击层（勾选 Ground 和 Enemy）
     private bool isSlamming = false;
@@ -307,6 +307,12 @@ public class PlayerSkillManager : MonoBehaviour
     {
         isSlamming = true;
 
+        // 🌟 1. 开启玩家无敌，防止在高速下落过程中受到敌人的接触伤害或触碰 Trigger
+        if (playerController != null)
+        {
+            playerController.isInvincible = true;
+        }
+
         SetPlayerVisibility(false);
 
         Vector3 spawnPos = (spawnPoint != null)
@@ -378,6 +384,7 @@ public class PlayerSkillManager : MonoBehaviour
                     Destroy(burst, destroyTime);
                 }
 
+                // 重新显示玩家
                 SetPlayerVisibility(true);
 
                 if (hit.CompareTag("Enemy"))
@@ -395,6 +402,15 @@ public class PlayerSkillManager : MonoBehaviour
             }
 
             yield return null;
+        }
+
+        // 🌟 2. 结束下砸状态并解除全程无敌
+        if (playerController != null)
+        {
+            playerController.isInvincible = false;
+
+            // 🌟 3. 开启受击闪烁协程（给玩家落地/反弹后提供 0.8s 的短暂保护缓冲）
+            playerController.StartCoroutine("InvincibleRoutine");
         }
 
         isSlamming = false;

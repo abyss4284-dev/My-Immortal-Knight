@@ -364,7 +364,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &5205311707902112978
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1136,7 +1136,7 @@ MonoBehaviour:
   enemyLayers:
     serializedVersion: 2
     m_Bits: 64
-  attackDamage: 100
+  attackDamage: 10
   attackRate: 0.3
   slashVFXPrefab: {fileID: 8306261271841826435, guid: 2aa2f8b9f685ffb47850201b92f52b17, type: 3}
   groundRecoilForce: 5
@@ -1148,6 +1148,7 @@ MonoBehaviour:
   invincibleDuration: 1.5
   hurtRecoilForce: 8
   hurtRecoilDuration: 0.15
+  isInvincible: 0
   facingDirectionParam: right
 --- !u!50 &5291837678559507196
 Rigidbody2D:
@@ -1225,7 +1226,7 @@ MonoBehaviour:
   slamManaCost: 20
   slamSpeed: 25
   slamDamage: 30
-  reboundForce: 12
+  reboundForce: 4
   waterBurstVFXPrefab: {fileID: 8102597744880172082, guid: b2aeea62c6fd54146b79cbfa1efe7669, type: 3}
   slamHitLayers:
     serializedVersion: 2
@@ -1593,7 +1594,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &8939148279382619577
 RectTransform:
   m_ObjectHideFlags: 0

@@ -3,9 +3,19 @@ using UnityEngine.SceneManagement;
 
 public class InteractPortal : MonoBehaviour
 {
-    // 跨场景传递的传送门数据
-    public static bool isTransferring = false;
-    public static string sourcePortalName = "";
+    // 🌟 核心修改 1：保留属性访问接口，但底层数据直接映射到 ScenePortal！
+    // 这样不用修改外部引用，同时确保 PlayerSpawnManager 能够统一下单与清空标记。
+    public static bool isTransferring
+    {
+        get => ScenePortal.isTransferring;
+        set => ScenePortal.isTransferring = value;
+    }
+
+    public static string sourcePortalName
+    {
+        get => ScenePortal.sourcePortalName;
+        set => ScenePortal.sourcePortalName = value;
+    }
 
     [Header("按键与提示设置")]
     public KeyCode interactKey = KeyCode.F; // 默认按 F 键传送
@@ -30,8 +40,8 @@ public class InteractPortal : MonoBehaviour
 
     private void Update()
     {
-        // 只有当玩家在范围内、未在传送中、且按下了 F 键时才触发
-        if (isPlayerInRange && !isTransferring && Input.GetKeyDown(interactKey))
+        // 只有当玩家在范围内、当前未处于传送过渡中、且按下了交互键时才触发
+        if (isPlayerInRange && !ScenePortal.isTransferring && Input.GetKeyDown(interactKey))
         {
             TriggerSceneTransition();
         }
@@ -62,7 +72,17 @@ public class InteractPortal : MonoBehaviour
     /// </summary>
     private void TriggerSceneTransition()
     {
-        if (string.IsNullOrEmpty(targetSceneName) || playerGameObject == null) return;
+        // 容错 1：若 targetSceneName 为空，尝试再次自动解析
+        if (string.IsNullOrEmpty(targetSceneName))
+        {
+            ParsePortalName();
+        }
+
+        if (string.IsNullOrEmpty(targetSceneName))
+        {
+            Debug.LogError($"🚨 [传送失败] 传送门 [{gameObject.name}] 无法获取目标场景名称，请检查物体命名！");
+            return;
+        }
 
         // 隐藏提示 UI
         if (interactUI != null)
@@ -70,24 +90,32 @@ public class InteractPortal : MonoBehaviour
             interactUI.SetActive(false);
         }
 
-        // 记录来源传送门名称（供新场景的初始化脚本寻找生成点）
-        sourcePortalName = gameObject.name;
+        // 🌟 核心修改 2：向 ScenePortal 写入传送数据，供 PlayerSpawnManager 识别并设置坐标
+        ScenePortal.sourcePortalName = gameObject.name;
+        ScenePortal.isTransferring = true;
+
+        // 容错 2：若缓存的 playerGameObject 为空，主动查找 Player
+        if (playerGameObject == null)
+        {
+            playerGameObject = GameObject.FindWithTag("Player");
+        }
 
         // 读取玩家组件，保存跨场景生命值与蓝量
-        PlayerController playerScript = playerGameObject.GetComponent<PlayerController>();
-        PlayerSkillManager skillScript = playerGameObject.GetComponent<PlayerSkillManager>();
-
-        if (playerScript != null)
+        if (playerGameObject != null)
         {
-            PlayerController.savedHealth = playerScript.currentHealth;
-        }
+            PlayerController playerScript = playerGameObject.GetComponent<PlayerController>();
+            PlayerSkillManager skillScript = playerGameObject.GetComponent<PlayerSkillManager>();
 
-        if (skillScript != null)
-        {
-            PlayerController.savedMana = skillScript.currentMana;
-        }
+            if (playerScript != null)
+            {
+                PlayerController.savedHealth = playerScript.currentHealth;
+            }
 
-        isTransferring = true;
+            if (skillScript != null)
+            {
+                PlayerController.savedMana = skillScript.currentMana;
+            }
+        }
 
         // 调用淡入淡出组件切关
         if (SceneFader.Instance != null)
@@ -96,7 +124,6 @@ public class InteractPortal : MonoBehaviour
         }
         else
         {
-            // 备用：若没有 SceneFader 则直接加载场景
             SceneManager.LoadScene(targetSceneName);
         }
 
@@ -105,8 +132,9 @@ public class InteractPortal : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (isTransferring) return;
-
+        // 🌟 核心修改 3：移除了此处的 `if (isTransferring) return;` 拦截！
+        // 因为交互门必须手动按 F 才会传送，即使玩家刚好出生在传送门里面，也不会误触发传送。
+        // 这样能确保玩家传送到新场景后，直接进入范围就能正常触发 UI 提示并随时按 F 传回。
         if (other.CompareTag("Player"))
         {
             isPlayerInRange = true;

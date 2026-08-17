@@ -75,7 +75,7 @@ public class PlayerController : MonoBehaviour
     public float hurtRecoilForce = 8f;      // 纯水平受击反推力
     public float hurtRecoilDuration = 0.15f;
 
-    private bool isInvincible = false;
+    [HideInInspector] public bool isInvincible = false;
     private bool isHurtRecoiling = false;
 
     private SpriteRenderer[] playerSprites;
