@@ -103,6 +103,7 @@ public class PlayerPauseMenu : MonoBehaviour
 
         // 恢复时间Scale，避免影响编辑器模式
         Time.timeScale = 1f;
+        Application.Quit();
 
 #if UNITY_EDITOR
         // 编辑器模式下停止运行

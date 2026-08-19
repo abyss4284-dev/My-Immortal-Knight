@@ -59,7 +59,7 @@ public class PlayerSpawnManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 处理 ScenePortal 空气墙切关后的玩家生成逻辑（固定 Y = -4）
+    /// 处理 ScenePortal 空气墙切关后的玩家生成逻辑
     /// </summary>
     private void HandlePortalSpawn()
     {
@@ -77,9 +77,9 @@ public class PlayerSpawnManager : MonoBehaviour
 
         if (targetPortalObj != null)
         {
-            // 获取目标空气墙位置，并将 Y 轴高度固定设为 -4
+            // 获取目标空气墙位置，并将 Y 轴高度固定设为 0.5
             Vector3 spawnPosition = targetPortalObj.transform.position;
-            spawnPosition.y = -4f;
+            spawnPosition.y = 1.0f;
 
             // 智能检测：只有当生成坐标踩在空气墙碰撞盒内部时，才开启防二次传送锁
             ScenePortal portalScript = targetPortalObj.GetComponent<ScenePortal>();
@@ -114,7 +114,7 @@ public class PlayerSpawnManager : MonoBehaviour
                 skillScript.currentMana = PlayerController.savedMana;
             }
 
-            Debug.Log($"🚪 玩家已在空气墙 [{targetPortalObj.name}] 位置成功生成！(X={spawnPosition.x}, Y=-4)");
+            Debug.Log($"🚪 玩家已在空气墙 [{targetPortalObj.name}] 位置成功生成！(X={spawnPosition.x}, Y={spawnPosition.y})");
         }
         else
         {
